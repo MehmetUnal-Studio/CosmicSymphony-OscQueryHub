@@ -1,0 +1,9 @@
+{
+  "id": 9,
+  "name": "LeapMotion",
+  "type": "hand-tracker",
+  "host": "192.168.1.152",
+  "oscQueryPort": 9012,
+  "enabled": true,
+  "description": "El takip sensörü"
+}

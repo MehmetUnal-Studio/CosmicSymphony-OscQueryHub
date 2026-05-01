@@ -1,0 +1,9 @@
+{
+  "id": 5,
+  "name": "TV",
+  "type": "tv-display",
+  "host": "192.168.1.105",
+  "oscQueryPort": 9010,
+  "enabled": false,
+  "description": "TV ekran arayüzü"
+}

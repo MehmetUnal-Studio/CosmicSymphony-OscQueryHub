@@ -1,0 +1,9 @@
+{
+  "id": 2,
+  "name": "Tablet2",
+  "type": "spectra-tablet",
+  "host": "192.168.1.110",
+  "oscQueryPort": 9010,
+  "enabled": false,
+  "description": "Spektra dokunmatik tablet 2"
+}
