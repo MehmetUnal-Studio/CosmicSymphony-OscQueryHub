@@ -4,6 +4,8 @@ Sahnedeki tüm OSC cihazlarını (LeapMotion, Spektra tabletler, VR, Ring, WebIn
 
 Eski Max/MSP Standalone Manager'ın yerini alır.
 
+→ [Görsel teknik anlatım](docs/visual-overview.html)
+
 ---
 
 ## Mimari
