@@ -622,6 +622,34 @@ function startDiscovery() {
   });
 }
 
+// ============ M4L GERİ KANAL (port 8888) ============
+const feedbackSocket = dgram.createSocket('udp4');
+
+feedbackSocket.on('message', (buf) => {
+  try {
+    // OSC olarak dene
+    const packet = osc.readPacket(buf, { metadata: true }) as any;
+    const address: string = packet.address || '';
+    const m = address.match(/\/?device(\d+)/i);
+    if (!m) return;
+    const deviceId = parseInt(m[1]);
+    const args = packet.args || [];
+    const path   = args[0]?.value ?? args[0] ?? '';
+    const value  = args[1]?.value ?? args[1] ?? 0;
+    broadcastToClients({ type: 'M4L_FEEDBACK', deviceId, path, value });
+    console.log(`  ◄ M4L [device${deviceId}] ${path} = ${value}`);
+  } catch {
+    // OSC değil — ham baytları logla, format tespiti için
+    const hex = buf.slice(0, 24).toString('hex').replace(/(.{2})/g, '$1 ');
+    const txt = buf.slice(0, 24).toString('utf8').replace(/[^\x20-\x7e]/g, '·');
+    console.log(`  ◄ M4L [ham] ${buf.length}b  hex: ${hex.trim()}  txt: ${txt}`);
+  }
+});
+
+feedbackSocket.bind(8889, () => {
+  console.log('  ◄ M4L geri kanal:   UDP port 8889');
+});
+
 // Periyodik olarak msg count'u tarayıcıya gönder
 setInterval(() => {
   if (deviceMsgCount.size === 0) return;
@@ -636,6 +664,7 @@ process.on('SIGINT', () => {
   bonjour.unpublishAll(() => {
     bonjour.destroy();
     udpPort.close();
+    feedbackSocket.close();
     for (const client of wsClients) client.close();
     process.exit(0);
   });

@@ -1,0 +1,9 @@
+{
+  "id": 10,
+  "name": "MaxOSCQuery",
+  "type": "oscquery-device",
+  "host": "192.168.1.101",
+  "oscQueryPort": 8000,
+  "enabled": true,
+  "description": "Bonjour ile keşfedildi"
+}

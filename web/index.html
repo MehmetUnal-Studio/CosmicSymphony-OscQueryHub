@@ -186,6 +186,41 @@
   .ableton-banner-stats .num { color: var(--accent); font-size: 1rem; }
   code { background: var(--bg-3); padding: 0.1rem 0.4rem; border-radius: 2px; font-size: 0.85em; }
 
+  /* M4L feedback indicator */
+  .m4l-strip {
+    border-top: 1px solid var(--line);
+    margin-top: 0.6rem; padding-top: 0.5rem;
+    display: flex; align-items: center; gap: 0.6rem;
+    min-height: 1.6rem;
+  }
+  .m4l-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--gray); flex-shrink: 0;
+    transition: background 0.1s, box-shadow 0.1s;
+  }
+  .m4l-dot.active {
+    background: var(--signal);
+    box-shadow: 0 0 6px var(--signal), 0 0 12px var(--signal);
+    animation: m4l-pulse 0.4s ease-out;
+  }
+  @keyframes m4l-pulse {
+    0%   { box-shadow: 0 0 12px var(--signal), 0 0 24px var(--signal); }
+    100% { box-shadow: 0 0 4px var(--signal); }
+  }
+  .m4l-label {
+    font-size: 0.6rem; color: var(--ink-dim); letter-spacing: 0.15em; flex-shrink: 0;
+  }
+  .m4l-label.active { color: var(--signal); }
+  .m4l-path {
+    font-size: 0.65rem; color: var(--osc); font-family: monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+    min-width: 0;
+  }
+  .m4l-value {
+    font-size: 0.7rem; color: var(--signal); font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+
   /* Discovered devices */
   .discovered-grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;
@@ -268,6 +303,7 @@
   const expandedDevices = new Set();
   const devices = new Map();
   const deviceMsgCounts = new Map();
+  const m4lFeedback = new Map();    // deviceId -> {path, value, ts}
   let msgsThisSecond = 0;
   let abletonTotal = 0;
   let ws = null;
@@ -501,6 +537,12 @@
           </button>
           <div id="params-list-${dev.id}" class="device-params-list${isExpanded ? ' open' : ''}"></div>
         </div>
+        <div class="m4l-strip" id="m4l-strip-${dev.id}">
+          <div class="m4l-dot" id="m4l-dot-${dev.id}"></div>
+          <span class="m4l-label" id="m4l-label-${dev.id}">◄ M4L</span>
+          <span class="m4l-path" id="m4l-path-${dev.id}"></span>
+          <span class="m4l-value" id="m4l-val-${dev.id}"></span>
+        </div>
       `;
 
       attachEditable(card.querySelector('[data-field="name"]'),         dev.id, 'name',         s => s.length > 0);
@@ -519,6 +561,7 @@
         if (list && dp) for (const [path, data] of dp.entries()) upsertParamRow(list, dev.id, path, data);
       }
     }
+    restoreM4LStrips();
   }
 
   function processInitialState(tree) {
@@ -575,7 +618,43 @@
       else if (msg.type === 'DISCOVERED_DEVICES') {
         renderDiscovered(msg.devices || []);
       }
+      else if (msg.type === 'M4L_FEEDBACK') {
+        const { deviceId, path, value } = msg;
+        m4lFeedback.set(deviceId, { path, value, ts: Date.now() });
+        flashM4L(deviceId, path, value);
+      }
     };
+  }
+
+  function flashM4L(deviceId, path, value) {
+    const dot   = document.getElementById(`m4l-dot-${deviceId}`);
+    const label = document.getElementById(`m4l-label-${deviceId}`);
+    const pathEl= document.getElementById(`m4l-path-${deviceId}`);
+    const valEl = document.getElementById(`m4l-val-${deviceId}`);
+    if (!dot) return;
+
+    const fmt = typeof value === 'number' ? value.toFixed(3) : String(value);
+    if (pathEl) pathEl.textContent = path;
+    if (valEl)  valEl.textContent  = fmt;
+
+    dot.classList.remove('active');
+    label.classList.remove('active');
+    void dot.offsetWidth; // reflow for re-trigger
+    dot.classList.add('active');
+    label.classList.add('active');
+
+    clearTimeout(dot._ft);
+    dot._ft = setTimeout(() => {
+      dot.classList.remove('active');
+      label.classList.remove('active');
+    }, 2000);
+  }
+
+  // Restore M4L feedback after re-render
+  function restoreM4LStrips() {
+    for (const [devId, fb] of m4lFeedback.entries()) {
+      if (Date.now() - fb.ts < 2000) flashM4L(devId, fb.path, fb.value);
+    }
   }
 
   function renderDiscovered(list) {
