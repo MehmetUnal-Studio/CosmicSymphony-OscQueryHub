@@ -1,7 +1,7 @@
 # OSCQuery Hub — Proje Durumu
 
 > Bu dosya, projenin mevcut durumunu ve gelecek AI oturumları için bağlamı içerir.
-> Son güncelleme: 2 Mayıs 2026
+> Son güncelleme: 2 Mayıs 2026 (2. oturum)
 
 ---
 
@@ -21,8 +21,10 @@ Sahnedeki/stüdyodaki tüm OSC cihazlarını (Spektra tabletler, LeapMotion, VR,
     [Node.js Hub @ localhost]
             │   ◄── Web arayüzü (http://localhost:5555/ui/)
             │   ◄── Manifest dosyaları (manifests/*.json)
+            │   ◄── Bonjour mDNS keşif (yeni cihazları otomatik bulur)
             │
-            │ UDP /Ableton/<id>/<param> ↦ port 10000
+            │ UDP  device9 /HandR0/palm/Tx 0.5  ──► port 10000
+            │ UDP  ◄ M4L geri kanal              ──  port 8889
             ▼
     [Ableton Live + M4L Device "Cosmic Unity"]
             │
@@ -47,17 +49,24 @@ oscquery-hub/
 ├── manifests/
 │   ├── tablet1.json … tablet4.json
 │   ├── tv.json, vr.json, vr2.json, ring.json
-│   └── leapmotion.json       ← Şu an aktif olan
-├── web/index.html             ← Yönetim arayüzü (vanilla HTML/JS)
+│   ├── leapmotion.json       ← Şu an aktif (192.168.1.152:9012)
+│   ├── maxoscquery_10.json   ← Bonjour ile keşfedildi (192.168.1.101:8000)
+│   └── webinstrument_11.json ← Bonjour ile keşfedildi (192.168.1.152:9100)
+├── web/index.html             ← Yönetim arayüzü (per-device param kartları)
+├── docs/
+│   ├── PROJECT_STATE.md       ← Bu dosya
+│   └── ...
 ├── package.json, tsconfig.json
 └── CLAUDE.md                  ← AI bağlam dosyası
 ```
 
 ### Önemli portlar
-- **5006**: Hub'ın OSC dinleme portu (UDP)
-- **5555**: Hub'ın HTTP+WebSocket portu (web arayüz)
-- **10000**: Ableton M4L'ın `udpreceive` portu — Hub buraya forward eder
-- **8888**: Eski sistemin port'u (kullanılmıyor artık)
+| Port | Protokol | Kullanım |
+|------|----------|----------|
+| 5006 | UDP | Hub'ın OSC dinleme portu |
+| 5555 | TCP | Hub'ın HTTP+WebSocket portu (web arayüz) |
+| 10000 | UDP | Ableton M4L `udpreceive` — Hub buraya forward eder |
+| 8889 | UDP | M4L geri kanal (◄ M4L feedback) — **8888 Max tarafından tutuluyordu** |
 
 ---
 
@@ -74,12 +83,16 @@ oscquery-hub/
 | 7 | VR2 | vr-headset | — | ✗ |
 | 8 | Ring | ring-controller | — | ✗ |
 | 9 | LeapMotion | hand-tracker | 192.168.1.152:9012 | ✓ TEST EDİLDİ, ÇALIŞIYOR |
+| 10 | maxoscquery_10 | keşfedildi | 192.168.1.101:8000 | Bonjour ile bulundu |
+| 11 | webinstrument_11 | keşfedildi | 192.168.1.152:9100 | Bonjour ile bulundu |
+
+Yeni keşfedilen cihazlar otomatik olarak bir sonraki ID'yi alır (10, 11, ...).
 
 ---
 
 ## NE BAŞARILDI
 
-### ✅ Aşama 1-10 (tamamı)
+### ✅ Aşama 1-10 (önceki oturumdan)
 - OSC dinleyici (UDP 5006)
 - OSCQuery server (kendi namespace'imizi sunuyoruz, port 5555)
 - WebSocket canlı veri akışı
@@ -89,14 +102,30 @@ oscquery-hub/
 - Manifest sistemi (JSON dosyaları, canlı yenileme)
 - **OSCQuery client** (cihazlara HTTP+WS ile aktif bağlanma)
 - **Binary OSC parser** (TouchDesigner ham OSC paketleri yolluyor, JSON değil)
-- **Ableton Forwarder** (`/Ableton/<id>/<param>` formatında UDP 10000'e gönderim)
+- **Ableton Forwarder** (`device{id} /param/path value` formatında UDP 10000'e gönderim)
 
-### ✅ Gerçek dünya testi
-LeapMotion (192.168.1.152:9012) ile test edildi:
-- 31 parametre keşfedildi
-- Saniyede ~60 kez veri akıyor (`/HandR0/palm/Tx`, `/HandL0/status/Pinch`, vs.)
-- Hub doğru forward ediyor: `tcpdump` çıktısı kanıtladı
-- Cosmic Unity M4L device (ID 9) sesi üretiyor
+### ✅ 2 Mayıs 2026 oturumunda tamamlananlar
+
+#### 1. Ableton mesaj formatı düzeltildi
+Eski (bozuk): `/Ableton/9//HandR0/palm/Tx 0.5`
+Yeni (doğru): `device9 /HandR0/palm/Tx 0.5`
+
+`osc` kütüphanesi baştaki `/` olmayan adresleri reddediyordu. Çözüm: `osc` kütüphanesi bypass edildi, `dgram` ile manuel binary OSC encoding yapıldı. Max `route device9` ile filtreliyor.
+
+```
+M4L patch route mantığı: sprintf "device%ld" → route device1 device2 ... device9
+```
+
+#### 2. Per-device param kartları (Web UI)
+Her cihaz artık kendi kutucuğunda yaşıyor. Parametre listesi o kutucuk içinde görünüyor. Tek global veri akışı yerine her cihaz bağımsız kart.
+
+#### 3. Bonjour keşif + otomatik ID
+Ağda `_oscjson._tcp` duyuran yeni cihazlar otomatik tespit ediliyor, bir sonraki ID atanıyor, manifest oluşturuluyor. ID 10, 11, ... diye devam ediyor.
+
+#### 4. M4L geri kanal (◄ M4L)
+Hub port 8889'u dinliyor. M4L'dan gelen feedback mesajları UI'da yanıp sönen `◄ M4L` göstergesi ile görünüyor. Her cihaz kartında ayrı gösterge var.
+
+**Dikkat:** M4L patch'teki `udpsend localhost 8888` → `udpsend localhost 8889` olarak değiştirilmeli (8888 eski Max Manager tarafından tutuluyordu).
 
 ---
 
@@ -109,7 +138,7 @@ LeapMotion (192.168.1.152:9012) ile test edildi:
 - Heartbeat, panic, autoreconnect mantığı vardı
 - Kullanıcı **artık bu Max patch'ini kullanmayacak** — Node.js hub onun yerini aldı
 
-**Önemli:** Ableton'daki M4L device (`Cosmic Unity` — MPE synth, gesture-mapped) **aynen kalıyor**. Bu konuşmada ona dokunulmadı.
+**Önemli:** Ableton'daki M4L device (`Cosmic Unity` — MPE synth, gesture-mapped) **aynen kalıyor**. Sadece ona gelen mesajların kaynağı değişti.
 
 ---
 
@@ -117,7 +146,8 @@ LeapMotion (192.168.1.152:9012) ile test edildi:
 
 - **Node.js + TypeScript** (`tsx watch` ile geliştirme, derleme yok)
 - **Kütüphaneler:**
-  - `osc` (OSC mesaj parsing)
+  - `osc` (OSC mesaj parsing — gelen paketler için)
+  - `dgram` (ham UDP — Ableton'a gönderim için, osc bypass)
   - `express` (HTTP server)
   - `ws` (WebSocket)
   - `bonjour-service` (mDNS keşif)
@@ -126,16 +156,13 @@ LeapMotion (192.168.1.152:9012) ile test edildi:
 
 ---
 
-## SIRADAKI POTANSİYEL ADIMLAR
+## SIRADAKI POTANSİYEL ADIMLAR (ÖNCELİK SIRALI)
 
-Kullanıcı bu sırada karar verecek:
-
-1. **Path format düzeltmesi** — Şu an `/HandR0/palm/Tx` → `HandR0_palm_Tx` underscore'a çevriliyor. Cosmic Unity'nin route nesnesi `/HandR0/palm/Tx` formatını bekliyor olabilir. Test edilmeli.
-2. **Heartbeat & Reconnect** — Cihaz X saniye sessiz kalırsa "lost" işaretle, panic gönder, otomatik geri bağlan. Sahnede kritik.
-3. **Logging** — `logs/` klasörüne tarih damgalı log dosyaları
-4. **Geri yön** (Ableton → Cihaz) — Eski Manager iki yönlüydü, biz tek yön yaptık
-5. **Recording / Replay** — OSC akışını dosyaya kaydet, sonra oynat (cihazlar yokken geliştirme için)
-6. **GitHub'a yükleme** (kullanıcı şimdilik istemedi)
+1. **M4L geri kanal testi** (P0) — `udpsend localhost 8889` yapılınca `◄ M4L` göstergesi yanmalı
+2. **Heartbeat & Panic** (P1) — Cihaz 5sn sessiz → kırmızı kart, panic gönder, otomatik geri bağlan. Sahnede kritik.
+3. **Logging** (P2) — `logs/` klasörüne tarih damgalı log dosyaları
+4. **Recording / Replay** (P3) — OSC akışını dosyaya kaydet, sonra oynat (cihazlar yokken geliştirme için)
+5. **GitHub'a yükleme** (kullanıcı şimdilik istemedi)
 
 ---
 
@@ -160,6 +187,15 @@ Kullanıcı bu sırada karar verecek:
 - Hub UDP 8888'e gönderiyordu, M4L `udpreceive 10000` dinliyordu
 - Çözüm: `ABLETON_PORT = 10000` yapıldı
 
+### 5. osc kütüphanesi `/`-siz adresleri reddediyordu
+- Max'in `route` nesnesi `device9` (slash yok) bekliyor
+- `osc` kütüphanesi invalid OSC diyerek hata verdi
+- Çözüm: `dgram` ile manuel binary OSC encoding — `encodeOscString` + `buildOscMessage` fonksiyonları
+
+### 6. M4L geri kanal port çakışması
+- Port 8888 Max Standalone Manager tarafından tutuluyordu (`lsof -i UDP:8888` → Max PID 3944)
+- Çözüm: Hub 8889'u dinliyor, M4L patch'te `udpsend localhost 8889` yapılmalı
+
 ---
 
 ## KULLANICI HAKKINDA NOTLAR
@@ -169,7 +205,7 @@ Kullanıcı bu sırada karar verecek:
 - Git'te yeni
 - CMake/C++ tamamen yeni (öğrenmek istemiyor şu an)
 - Türkçe konuşuyor
-- Sahnede çalan bir müzisyen/ses sanatçısı (bence)
+- Sahnede çalan bir müzisyen/ses sanatçısı
 - Spektra tablet, LeapMotion gibi alternatif kontrolcülerle çalışıyor
 - Çok hızlı öğreniyor — kavramları kapıyor, ama detayları sormaya cesareti var
 - Eski sistemi sofistikeydi (CosmicInstrumentsManager), AI uyumlu değildi sadece
@@ -186,30 +222,24 @@ npm run dev
 # Tarayıcı
 open http://localhost:5555/ui/
 
-# Test (lokalden Hub'a OSC mesajı yolla)
-node --input-type=module -e "
-import osc from 'osc';
-const port = new osc.UDPPort({ localAddress: '0.0.0.0', localPort: 0,
-  remoteAddress: '127.0.0.1', remotePort: 5006, metadata: true });
-port.on('ready', () => {
-  port.send({ address: '/test', args: [{ type: 'f', value: 0.5 }] });
-  setTimeout(() => process.exit(0), 500);
-});
-port.open();
-"
-
 # Hub'tan Ableton'a giden trafiği izle
 sudo tcpdump -i lo0 -n udp port 10000 -X -s 200
 
+# M4L geri kanalı dinle (test)
+sudo tcpdump -i lo0 -n udp port 8889 -X -s 200
+
 # Manifest IP değiştir (örnek)
 sed -i '' 's/"host": ".*"/"host": "192.168.1.200"/' manifests/leapmotion.json
+
+# Server öldür
+pkill -f "tsx watch src/index.ts"
 ```
 
 ---
 
 ## GIT DURUMU
 
-- Tek commit: `Working: LeapMotion → Hub → Ableton, ses çıkıyor`
-- 18 dosya, 3773 satır
+- Son commit: `M4L geri kanal (port 8889), tip tag fix, yeni manifest'ler, referans görseller`
+- 18+ dosya
 - `main` branch'te
 - Remote yok (lokal repo)
