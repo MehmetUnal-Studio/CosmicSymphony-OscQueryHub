@@ -42,11 +42,11 @@
   }
   h2 .hint { font-size: 0.7rem; font-weight: 300; color: var(--ink-dim); letter-spacing: 0.1em; }
   .devices-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
   }
   .device-card {
     background: var(--bg-2); border: 1px solid var(--line); padding: 1.2rem;
-    transition: all 0.2s; position: relative;
+    transition: border-color 0.2s, background 0.2s; position: relative;
   }
   .device-card.connected { border-color: var(--signal); }
   .device-card.connecting { border-color: var(--warn); }
@@ -68,16 +68,11 @@
     background: var(--gray); flex-shrink: 0;
   }
   .connected .device-status-dot { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
-  .connecting .device-status-dot {
-    background: var(--warn); animation: pulse 1s ease-in-out infinite;
-  }
+  .connecting .device-status-dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
   .lost .device-status-dot { background: var(--error); }
   .configured .device-status-dot { background: var(--warn); }
   .disabled .device-status-dot { background: var(--gray); }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   .device-type {
     font-size: 0.7rem; color: var(--ink-dim); margin-bottom: 0.6rem;
     text-transform: uppercase; letter-spacing: 0.1em;
@@ -90,20 +85,14 @@
     display: inline-block; min-width: 80px;
   }
   .editable:hover { border-color: var(--line); background: var(--bg-3); }
-  .editable:focus {
-    outline: none; border: 1px solid var(--accent);
-    background: var(--bg); color: var(--ink);
-  }
+  .editable:focus { outline: none; border: 1px solid var(--accent); background: var(--bg); color: var(--ink); }
   .editable.error { border-color: var(--error); }
   .device-host-row {
     border-top: 1px solid var(--line);
     padding-top: 0.6rem; margin-top: 0.6rem;
     display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
   }
-  .device-host-row .label {
-    font-size: 0.65rem; color: var(--ink-dim);
-    letter-spacing: 0.15em; flex-shrink: 0;
-  }
+  .device-host-row .label { font-size: 0.65rem; color: var(--ink-dim); letter-spacing: 0.15em; flex-shrink: 0; }
   .device-status-text {
     font-size: 0.7rem; color: var(--ink-dim); margin-top: 0.5rem;
     text-transform: uppercase; letter-spacing: 0.1em;
@@ -124,9 +113,7 @@
     cursor: pointer; font-family: inherit; font-size: 0.7rem;
     letter-spacing: 0.1em; transition: all 0.15s; flex: 1;
   }
-  .btn.primary {
-    background: var(--accent); border-color: var(--accent); color: var(--bg);
-  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
   .btn:hover { border-color: var(--accent); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .save-hint {
@@ -135,33 +122,53 @@
   }
   .save-hint.ok { color: var(--signal); }
   .save-hint.err { color: var(--error); }
-  .params { display: flex; flex-direction: column; gap: 0.4rem; max-height: 600px; overflow-y: auto; }
-  .param {
-    background: var(--bg-2); border: 1px solid var(--line); padding: 0.6rem 1.2rem;
-    transition: border-color 0.1s, background 0.1s;
+
+  /* Per-device params panel */
+  .device-params-bar {
+    border-top: 1px solid var(--line);
+    margin-top: 0.6rem; padding-top: 0.5rem;
   }
-  .param.flash { border-color: var(--signal); background: var(--bg-3); }
-  .param-header {
-    display: grid; grid-template-columns: 80px 1fr 80px 120px;
-    gap: 1rem; align-items: center;
+  .params-toggle-btn {
+    width: 100%; background: transparent;
+    border: 1px solid var(--line); color: var(--ink-dim);
+    padding: 0.35rem 0.6rem; cursor: pointer;
+    font-family: inherit; font-size: 0.65rem; letter-spacing: 0.15em;
+    transition: all 0.15s;
+    display: flex; justify-content: space-between; align-items: center;
   }
-  .param-device-tag {
-    font-size: 0.65rem; color: var(--accent);
-    background: rgba(255, 92, 43, 0.1);
-    border: 1px solid var(--accent);
-    padding: 0.15rem 0.4rem; text-align: center;
+  .params-toggle-btn:hover { border-color: var(--osc); color: var(--ink); }
+  .params-toggle-btn.open { border-color: var(--signal); color: var(--signal); }
+  .params-toggle-btn.open .params-count { color: var(--signal); }
+  .params-count { color: var(--accent); font-size: 0.8rem; }
+  .device-params-list {
+    display: none; flex-direction: column;
+    max-height: 220px; overflow-y: auto;
+    margin-top: 0.4rem; border: 1px solid var(--line);
+    background: var(--bg);
+    scrollbar-width: thin; scrollbar-color: var(--line) transparent;
   }
-  .param-device-tag.unknown {
-    color: var(--ink-dim); border-color: var(--line); background: var(--bg-3);
+  .device-params-list.open { display: flex; }
+  .device-param-row {
+    display: grid; grid-template-columns: 1fr 32px 80px;
+    gap: 0.4rem; padding: 0.3rem 0.6rem;
+    font-size: 0.65rem; border-bottom: 1px solid var(--line);
+    transition: background 0.08s; align-items: center;
+    min-width: 0;
   }
-  .param-path { font-size: 0.8rem; color: var(--ink); font-family: monospace; }
-  .param-type {
-    font-size: 0.7rem; color: var(--ink-dim); text-align: center;
-    border: 1px solid var(--line); padding: 0.15rem 0.4rem;
+  .device-param-row:last-child { border-bottom: none; }
+  .device-param-row.flash { background: rgba(77, 255, 170, 0.07); }
+  .dp-path {
+    color: var(--ink); font-family: monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
   }
-  .param-value {
-    font-size: 0.8rem; color: var(--accent); text-align: right;
-    font-variant-numeric: tabular-nums;
+  .dp-type {
+    color: var(--ink-dim); text-align: center; font-size: 0.6rem;
+    border: 1px solid var(--line); padding: 0.1rem 0.2rem;
+  }
+  .dp-value {
+    color: var(--accent); text-align: right;
+    font-variant-numeric: tabular-nums; font-size: 0.7rem;
   }
   .empty {
     text-align: center; color: var(--ink-dim);
@@ -192,7 +199,7 @@
 <div class="ableton-banner">
   <div class="ableton-banner-text">
     <strong>→ Ableton Forwarder aktif</strong>
-    Cihazlardan gelen mesajlar <code>/Ableton/&lt;id&gt;/&lt;param&gt;</code> olarak <code>127.0.0.1:8888</code>'e iletiliyor.
+    Cihazlardan gelen mesajlar <code>/Ableton/&lt;id&gt;/&lt;param&gt;</code> olarak <code>127.0.0.1:10000</code>'e iletiliyor.
   </div>
   <div class="ableton-banner-stats">
     Toplam: <span class="num" id="ableton-total">0</span> mesaj
@@ -209,41 +216,31 @@
 
 <h2>
   <span>Manifest Cihazları</span>
-  <span class="hint">IP'ye tıklayıp düzenle · ENABLE ile bağlan · RECONNECT ile yenile</span>
+  <span class="hint">IP'ye tıklayıp düzenle · ENABLE ile bağlan · PARAMS ile veriyi aç</span>
 </h2>
 
 <div class="devices-grid" id="devices">
   <div class="empty">Manifest yükleniyor…</div>
 </div>
 
-<h2>
-  <span>Canlı Parametreler</span>
-  <span class="hint">cihazlardan gelen tüm OSC parametreleri</span>
-</h2>
-
-<div class="params" id="params">
-  <div class="empty">Henüz mesaj yok. Cihaz ENABLE edilince bağlanır ve veri akmaya başlar.</div>
-</div>
-
 <script>
-  const params = new Map();
+  const deviceParams = new Map();   // deviceId -> Map(path -> data)
+  const expandedDevices = new Set();
   const devices = new Map();
   const deviceMsgCounts = new Map();
-  let totalMsgs = 0;
   let msgsThisSecond = 0;
   let abletonTotal = 0;
   let ws = null;
 
-  const elStatus = document.getElementById('status');
+  const elStatus    = document.getElementById('status');
   const elStatusText = document.getElementById('status-text');
-  const elDevices = document.getElementById('devices');
-  const elParams = document.getElementById('params');
-  const elStatDevTotal = document.getElementById('stat-devices-total');
+  const elDevices   = document.getElementById('devices');
+  const elStatDevTotal  = document.getElementById('stat-devices-total');
   const elStatDevActive = document.getElementById('stat-devices-active');
-  const elStatDevConn = document.getElementById('stat-devices-conn');
-  const elStatParams = document.getElementById('stat-params');
-  const elStatRate = document.getElementById('stat-rate');
-  const elAbletonTotal = document.getElementById('ableton-total');
+  const elStatDevConn   = document.getElementById('stat-devices-conn');
+  const elStatParams    = document.getElementById('stat-params');
+  const elStatRate      = document.getElementById('stat-rate');
+  const elAbletonTotal  = document.getElementById('ableton-total');
 
   function setStatus(connected, text) {
     elStatus.classList.toggle('connected', connected);
@@ -251,139 +248,185 @@
   }
 
   function formatValue(value) {
-    if (Array.isArray(value)) {
-      return value.map(v => typeof v === 'number' ? v.toFixed(3) : v).join(', ');
-    }
+    if (Array.isArray(value)) return value.map(v => typeof v === 'number' ? v.toFixed(3) : v).join(', ');
     return typeof value === 'number' ? value.toFixed(3) : value;
   }
 
   function updateStats() {
-    const total = devices.size;
     let active = 0, conn = 0;
     for (const d of devices.values()) {
       if (d.enabled) active++;
       if (d.status === 'connected') conn++;
     }
-    elStatDevTotal.textContent = total;
+    let paramCount = 0;
+    for (const m of deviceParams.values()) paramCount += m.size;
+    elStatDevTotal.textContent  = devices.size;
     elStatDevActive.textContent = active;
-    elStatDevConn.textContent = conn;
-    elStatParams.textContent = params.size;
-    elAbletonTotal.textContent = abletonTotal;
+    elStatDevConn.textContent   = conn;
+    elStatParams.textContent    = paramCount;
+    elAbletonTotal.textContent  = abletonTotal;
   }
 
-  setInterval(() => {
-    elStatRate.textContent = msgsThisSecond;
-    msgsThisSecond = 0;
-  }, 1000);
+  setInterval(() => { elStatRate.textContent = msgsThisSecond; msgsThisSecond = 0; }, 1000);
 
   function sendUpdateDevice(deviceId, updates) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN)
       ws.send(JSON.stringify({ type: 'UPDATE_DEVICE', deviceId, updates }));
-    }
   }
-
   function sendReconnect(deviceId) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN)
       ws.send(JSON.stringify({ type: 'RECONNECT_DEVICE', deviceId }));
-    }
   }
 
-  function isValidIp(s) {
-    return /^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(s) || /^[a-zA-Z0-9.\-]+$/.test(s);
-  }
-  function isValidPort(s) {
-    const n = parseInt(s, 10);
-    return !isNaN(n) && n > 0 && n < 65536;
-  }
+  function isValidIp(s)   { return /^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(s) || /^[a-zA-Z0-9.\-]+$/.test(s); }
+  function isValidPort(s) { const n = parseInt(s, 10); return !isNaN(n) && n > 0 && n < 65536; }
 
   function attachEditable(el, deviceId, field, validator) {
     el.contentEditable = 'true';
     el.spellcheck = false;
-    let originalValue = el.textContent;
-
-    el.addEventListener('focus', () => {
-      originalValue = el.textContent;
-      el.classList.remove('error');
-    });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
-      else if (e.key === 'Escape') {
-        e.preventDefault(); el.textContent = originalValue; el.blur();
-      }
+    let orig = el.textContent;
+    el.addEventListener('focus', () => { orig = el.textContent; el.classList.remove('error'); });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); el.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); el.textContent = orig; el.blur(); }
     });
     el.addEventListener('blur', () => {
-      const newValue = el.textContent.trim();
-      if (newValue === originalValue) return;
-      if (validator && !validator(newValue)) {
-        el.classList.add('error');
-        showHint(deviceId, 'Geçersiz değer', 'err');
-        el.textContent = originalValue;
-        return;
+      const v = el.textContent.trim();
+      if (v === orig) return;
+      if (validator && !validator(v)) {
+        el.classList.add('error'); showHint(deviceId, 'Geçersiz değer', 'err'); el.textContent = orig; return;
       }
       const updates = {};
-      updates[field] = field === 'oscQueryPort' ? parseInt(newValue, 10) : newValue;
+      updates[field] = field === 'oscQueryPort' ? parseInt(v, 10) : v;
       sendUpdateDevice(deviceId, updates);
       flagSaving(deviceId);
     });
   }
 
-  function flagSaving(deviceId) {
-    const card = document.getElementById(`dev-${deviceId}`);
-    if (!card) return;
-    card.classList.add('saving');
-    showHint(deviceId, 'Kaydediliyor...', '');
+  function flagSaving(id) {
+    const c = document.getElementById(`dev-${id}`); if (!c) return;
+    c.classList.add('saving'); showHint(id, 'Kaydediliyor...', '');
   }
-  function flagSaved(deviceId) {
-    const card = document.getElementById(`dev-${deviceId}`);
-    if (!card) return;
-    card.classList.remove('saving');
-    card.classList.add('saved');
-    showHint(deviceId, '✓ Kaydedildi', 'ok');
-    setTimeout(() => {
-      card.classList.remove('saved');
-      showHint(deviceId, '', '');
-    }, 1200);
+  function flagSaved(id) {
+    const c = document.getElementById(`dev-${id}`); if (!c) return;
+    c.classList.remove('saving'); c.classList.add('saved');
+    showHint(id, '✓ Kaydedildi', 'ok');
+    setTimeout(() => { c.classList.remove('saved'); showHint(id, '', ''); }, 1200);
   }
-  function flagError(deviceId, err) {
-    const card = document.getElementById(`dev-${deviceId}`);
-    if (!card) return;
-    card.classList.remove('saving');
-    showHint(deviceId, '✗ ' + err, 'err');
+  function flagError(id, err) {
+    const c = document.getElementById(`dev-${id}`); if (!c) return;
+    c.classList.remove('saving'); showHint(id, '✗ ' + err, 'err');
   }
-  function showHint(deviceId, text, type) {
-    const card = document.getElementById(`dev-${deviceId}`);
-    if (!card) return;
-    const hint = card.querySelector('.save-hint');
-    if (hint) {
-      hint.textContent = text;
-      hint.className = 'save-hint ' + (type || '');
-    }
+  function showHint(id, text, type) {
+    const c = document.getElementById(`dev-${id}`); if (!c) return;
+    const h = c.querySelector('.save-hint');
+    if (h) { h.textContent = text; h.className = 'save-hint ' + (type || ''); }
   }
 
   function statusLabel(dev) {
     if (!dev.enabled) return 'DISABLED';
     if (dev.status === 'connecting') return 'CONNECTING...';
-    if (dev.status === 'connected') return `CONNECTED · ${dev.paramCount || 0} params`;
-    if (dev.status === 'lost') return 'CONNECTION LOST';
+    if (dev.status === 'connected')  return `CONNECTED · ${dev.paramCount || 0} PARAMS`;
+    if (dev.status === 'lost')       return 'CONNECTION LOST';
     return 'CONFIGURED';
   }
 
-  function renderDevices() {
-    if (devices.size === 0) {
-      elDevices.innerHTML = '<div class="empty">Manifest dosyası yok</div>';
-      return;
+  function getDeviceIdByName(name) {
+    for (const [id, dev] of devices.entries()) if (dev.name === name) return id;
+    return null;
+  }
+
+  function inferDeviceName(path) {
+    const first = path.split('/').filter(Boolean)[0];
+    if (!first) return null;
+    for (const dev of devices.values()) if (dev.name === first) return dev.name;
+    return null;
+  }
+
+  // Toggle a device's param panel open/closed
+  function toggleDeviceParams(devId) {
+    const list = document.getElementById(`params-list-${devId}`);
+    const btn  = document.getElementById(`params-toggle-${devId}`);
+    if (!list) return;
+
+    if (expandedDevices.has(devId)) {
+      expandedDevices.delete(devId);
+      list.classList.remove('open');
+      if (btn) { btn.classList.remove('open'); btn.querySelector('.arrow').textContent = '▼'; }
+    } else {
+      expandedDevices.add(devId);
+      list.classList.add('open');
+      if (btn) { btn.classList.add('open'); btn.querySelector('.arrow').textContent = '▲'; }
+      // Populate with current data
+      list.innerHTML = '';
+      const dp = deviceParams.get(devId);
+      if (dp) for (const [path, data] of dp.entries()) upsertParamRow(list, devId, path, data);
     }
+  }
+
+  function upsertParamRow(container, devId, path, data) {
+    const devName = devices.get(devId)?.name;
+    const display = devName ? path.replace(new RegExp(`^/${devName}`), '') : path;
+    const rowId   = `dp-${devId}-${path.replace(/\//g, '_')}`;
+
+    let row = document.getElementById(rowId);
+    if (!row) {
+      row = document.createElement('div');
+      row.id = rowId;
+      row.className = 'device-param-row';
+      row.innerHTML = `<span class="dp-path" title="${path}">${display}</span>
+                       <span class="dp-type">${data.paramType || data.type || '?'}</span>
+                       <span class="dp-value"></span>`;
+      container.appendChild(row);
+    }
+    row.querySelector('.dp-value').textContent = formatValue(data.value ?? data.VALUE);
+    row.classList.add('flash');
+    clearTimeout(row._ft);
+    row._ft = setTimeout(() => row.classList.remove('flash'), 120);
+  }
+
+  // Route an incoming param to its device
+  function processParam(path, data) {
+    const devId = data.deviceName ? getDeviceIdByName(data.deviceName) : null;
+    if (devId === null) return;
+
+    if (!deviceParams.has(devId)) deviceParams.set(devId, new Map());
+    deviceParams.get(devId).set(path, data);
+
+    // Update count badge (no full re-render)
+    const badge = document.getElementById(`params-count-${devId}`);
+    if (badge) badge.textContent = deviceParams.get(devId).size;
+
+    // Live-update open panel
+    if (expandedDevices.has(devId)) {
+      const list = document.getElementById(`params-list-${devId}`);
+      if (list) upsertParamRow(list, devId, path, data);
+    }
+
+    flashDevice(devId);
+  }
+
+  function flashDevice(devId) {
+    const c = document.getElementById(`dev-${devId}`); if (!c) return;
+    c.classList.add('flash');
+    clearTimeout(c._ft);
+    c._ft = setTimeout(() => c.classList.remove('flash'), 200);
+  }
+
+  function renderDevices() {
+    if (devices.size === 0) { elDevices.innerHTML = '<div class="empty">Manifest dosyası yok</div>'; return; }
     elDevices.innerHTML = '';
     const sorted = Array.from(devices.values()).sort((a, b) => a.id - b.id);
 
     for (const dev of sorted) {
+      const statusClass  = dev.enabled ? (dev.status || 'configured') : 'disabled';
+      const msgCount     = deviceMsgCounts.get(dev.id) || 0;
+      const paramCount   = deviceParams.get(dev.id)?.size || 0;
+      const isExpanded   = expandedDevices.has(dev.id);
+
       const card = document.createElement('div');
-      const statusClass = dev.enabled ? (dev.status || 'configured') : 'disabled';
       card.className = `device-card ${statusClass}`;
       card.id = `dev-${dev.id}`;
-
-      const msgCount = deviceMsgCounts.get(dev.id) || 0;
-
       card.innerHTML = `
         <div class="device-id">ID ${dev.id}</div>
         <div class="device-name">
@@ -394,11 +437,11 @@
         <div class="device-host-row">
           <span class="label">HOST</span>
           <span class="editable" data-field="host">${dev.host}</span>
-          <span style="color: var(--ink-dim);">:</span>
+          <span style="color:var(--ink-dim)">:</span>
           <span class="editable" data-field="oscQueryPort">${dev.oscQueryPort}</span>
         </div>
         <div class="device-status-text ${dev.status || ''}">${statusLabel(dev)}</div>
-        ${msgCount > 0 ? `<div class="device-msgs">${msgCount} mesaj</div>` : ''}
+        <div class="device-msgs" style="${msgCount === 0 ? 'display:none' : ''}">${msgCount} mesaj</div>
         <div class="device-actions">
           <button class="btn ${dev.enabled ? 'primary' : ''}" data-action="toggle">
             ${dev.enabled ? '● ENABLED' : '○ ENABLE'}
@@ -408,81 +451,40 @@
           </button>
         </div>
         <div class="save-hint"></div>
-      `;
-
-      attachEditable(card.querySelector('[data-field="name"]'), dev.id, 'name', s => s.length > 0);
-      attachEditable(card.querySelector('[data-field="host"]'), dev.id, 'host', isValidIp);
-      attachEditable(card.querySelector('[data-field="oscQueryPort"]'), dev.id, 'oscQueryPort', isValidPort);
-
-      card.querySelector('[data-action="toggle"]').onclick = () => {
-        sendUpdateDevice(dev.id, { enabled: !dev.enabled });
-        flagSaving(dev.id);
-      };
-      card.querySelector('[data-action="reconnect"]').onclick = () => {
-        sendReconnect(dev.id);
-        showHint(dev.id, 'Yeniden bağlanıyor...', '');
-      };
-
-      elDevices.appendChild(card);
-    }
-  }
-
-  function flashDevice(deviceId) {
-    const card = document.getElementById(`dev-${deviceId}`);
-    if (!card) return;
-    card.classList.add('flash');
-    clearTimeout(card._flashTimer);
-    card._flashTimer = setTimeout(() => card.classList.remove('flash'), 200);
-  }
-
-  function renderParam(path, data) {
-    let row = document.getElementById(`p-${path}`);
-    const isNew = !row;
-    if (isNew) {
-      const empty = elParams.querySelector('.empty');
-      if (empty) empty.remove();
-      row = document.createElement('div');
-      row.id = `p-${path}`;
-      row.className = 'param';
-      row.innerHTML = `
-        <div class="param-header">
-          <div class="param-device-tag"></div>
-          <div class="param-path"></div>
-          <div class="param-type"></div>
-          <div class="param-value"></div>
+        <div class="device-params-bar">
+          <button id="params-toggle-${dev.id}" class="params-toggle-btn${isExpanded ? ' open' : ''}"
+                  onclick="toggleDeviceParams(${dev.id})">
+            <span><span class="arrow">${isExpanded ? '▲' : '▼'}</span> PARAMS</span>
+            <span id="params-count-${dev.id}" class="params-count">${paramCount}</span>
+          </button>
+          <div id="params-list-${dev.id}" class="device-params-list${isExpanded ? ' open' : ''}"></div>
         </div>
       `;
-      row.querySelector('.param-path').textContent = path;
-      row.querySelector('.param-type').textContent = data.paramType || data.type || '?';
-      const tag = row.querySelector('.param-device-tag');
-      if (data.deviceName) {
-        tag.textContent = data.deviceName;
-        tag.classList.remove('unknown');
-      } else {
-        tag.textContent = '?';
-        tag.classList.add('unknown');
+
+      attachEditable(card.querySelector('[data-field="name"]'),         dev.id, 'name',         s => s.length > 0);
+      attachEditable(card.querySelector('[data-field="host"]'),         dev.id, 'host',         isValidIp);
+      attachEditable(card.querySelector('[data-field="oscQueryPort"]'), dev.id, 'oscQueryPort', isValidPort);
+
+      card.querySelector('[data-action="toggle"]').onclick   = () => { sendUpdateDevice(dev.id, { enabled: !dev.enabled }); flagSaving(dev.id); };
+      card.querySelector('[data-action="reconnect"]').onclick = () => { sendReconnect(dev.id); showHint(dev.id, 'Yeniden bağlanıyor...', ''); };
+
+      elDevices.appendChild(card);
+
+      // Restore open panels after re-render
+      if (isExpanded) {
+        const list = document.getElementById(`params-list-${dev.id}`);
+        const dp   = deviceParams.get(dev.id);
+        if (list && dp) for (const [path, data] of dp.entries()) upsertParamRow(list, dev.id, path, data);
       }
-      elParams.appendChild(row);
     }
-    row.querySelector('.param-value').textContent = formatValue(data.value || data.VALUE);
-    row.classList.add('flash');
-    clearTimeout(row._flashTimer);
-    row._flashTimer = setTimeout(() => row.classList.remove('flash'), 100);
   }
 
   function processInitialState(tree) {
     function walk(node, path) {
-      if (node.TYPE !== undefined) {
-        params.set(path, node);
-        renderParam(path, {
-          paramType: node.TYPE, value: node.VALUE, source: node.DESCRIPTION
-        });
-      }
-      if (node.CONTENTS) {
-        for (const [key, child] of Object.entries(node.CONTENTS)) {
-          walk(child, path + '/' + key);
-        }
-      }
+      if (node.TYPE !== undefined)
+        processParam(path, { paramType: node.TYPE, value: node.VALUE, deviceName: inferDeviceName(path) });
+      if (node.CONTENTS)
+        for (const [k, child] of Object.entries(node.CONTENTS)) walk(child, path + '/' + k);
     }
     walk(tree, '');
     updateStats();
@@ -490,56 +492,41 @@
 
   function connect() {
     ws = new WebSocket(`ws://${location.host}`);
-    ws.onopen = () => setStatus(true, 'BAĞLI');
-    ws.onclose = () => {
-      setStatus(false, 'BAĞLANTI KOPTU — yeniden deneniyor...');
-      setTimeout(connect, 1500);
-    };
+    ws.onopen  = () => setStatus(true, 'BAĞLI');
+    ws.onclose = () => { setStatus(false, 'BAĞLANTI KOPTU — yeniden deneniyor...'); setTimeout(connect, 1500); };
     ws.onerror = () => setStatus(false, 'HATA');
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
+    ws.onmessage = ({ data: raw }) => {
+      const msg = JSON.parse(raw);
 
       if (msg.type === 'INITIAL_STATE') {
+        if (msg.devices) { for (const d of msg.devices) devices.set(d.id, d); renderDevices(); }
         processInitialState(msg.namespace);
-        if (msg.devices) {
-          for (const d of msg.devices) devices.set(d.id, d);
-          renderDevices();
-        }
         updateStats();
       }
       else if (msg.type === 'PATH_CHANGED') {
-        params.set(msg.path, msg);
-        renderParam(msg.path, msg);
-        totalMsgs++;
+        processParam(msg.path, msg);
         msgsThisSecond++;
         updateStats();
       }
       else if (msg.type === 'DEVICES_RELOADED') {
-        if (msg.devices) {
-          devices.clear();
-          for (const d of msg.devices) devices.set(d.id, d);
-        }
-        renderDevices();
-        updateStats();
+        if (msg.devices) { devices.clear(); for (const d of msg.devices) devices.set(d.id, d); }
+        renderDevices(); updateStats();
       }
       else if (msg.type === 'DEVICE_UPDATED') {
-        if (msg.device) {
-          devices.set(msg.device.id, msg.device);
-          renderDevices();
-          updateStats();
-        }
+        if (msg.device) { devices.set(msg.device.id, msg.device); renderDevices(); updateStats(); }
       }
       else if (msg.type === 'UPDATE_DEVICE_RESULT') {
-        if (msg.ok) flagSaved(msg.deviceId);
-        else flagError(msg.deviceId, msg.error || 'Hata');
+        if (msg.ok) flagSaved(msg.deviceId); else flagError(msg.deviceId, msg.error || 'Hata');
       }
       else if (msg.type === 'DEVICE_MSG_COUNTS') {
         for (const [id, c] of Object.entries(msg.counts)) {
-          deviceMsgCounts.set(parseInt(id, 10), c);
+          const devId = parseInt(id, 10);
+          deviceMsgCounts.set(devId, c);
+          const msgEl = document.querySelector(`#dev-${devId} .device-msgs`);
+          if (msgEl) { msgEl.textContent = c + ' mesaj'; msgEl.style.display = c > 0 ? '' : 'none'; }
         }
         if (msg.abletonTotal) abletonTotal = msg.abletonTotal;
-        renderDevices();
         elAbletonTotal.textContent = abletonTotal;
       }
     };
@@ -547,6 +534,5 @@
 
   connect();
 </script>
-
 </body>
 </html>
