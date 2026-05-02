@@ -5,6 +5,7 @@ import { Bonjour } from 'bonjour-service';
 import { createServer } from 'http';
 import { readdirSync, readFileSync, writeFileSync, watch } from 'fs';
 import { join } from 'path';
+import dgram from 'dgram';
 import { OscQueryClient } from './oscquery-client.js';
 
 // ============ AYARLAR ============
@@ -190,8 +191,7 @@ function handleClientValue(dev: DeviceManifest, path: string, value: any) {
 
   // Ableton'a forward — eski sistem formatı
   if (dev.enabled) {
-    const paramName = path.replace(/^\//, '').replace(/\//g, '_');
-    forwardToAbleton(dev.id, paramName, v, type);
+    forwardToAbleton(dev.id, path, v, type);
   }
 }
 
@@ -277,18 +277,38 @@ function oscTypeToQueryType(oscType: string): string {
 }
 
 // ============ ABLETON FORWARDER ============
+// dgram ile manuel OSC encode — slash olmadan adres gönderebilmek için
+const abletonSocket = dgram.createSocket('udp4');
+
+function oscPad(buf: Buffer): Buffer {
+  const padded = Math.ceil(buf.length / 4) * 4;
+  const out = Buffer.alloc(padded);
+  buf.copy(out);
+  return out;
+}
+
+function encodeOscString(s: string): Buffer {
+  return oscPad(Buffer.from(s + '\0', 'utf8'));
+}
+
+function buildOscMessage(address: string, path: string, value: number, isInt: boolean): Buffer {
+  const addrBuf  = encodeOscString(address);
+  const typeBuf  = encodeOscString(isInt ? ',si' : ',sf');
+  const pathBuf  = encodeOscString(path);
+  const valBuf   = Buffer.alloc(4);
+  if (isInt) valBuf.writeInt32BE(Math.round(value), 0);
+  else       valBuf.writeFloatBE(value, 0);
+  return Buffer.concat([addrBuf, typeBuf, pathBuf, valBuf]);
+}
+
 let ableton_msgs_sent = 0;
 function forwardToAbleton(deviceId: number, paramName: string, value: any, type: string) {
-  const ableton_address = `/Ableton/${deviceId}/${paramName}`;
-  const args = (Array.isArray(value) ? value : [value]).map((v) => {
-    if (typeof v === 'number') {
-      return { type: Number.isInteger(v) && type === 'i' ? 'i' : 'f', value: v };
-    }
-    if (typeof v === 'string') return { type: 's', value: v };
-    if (typeof v === 'boolean') return { type: v ? 'T' : 'F', value: v };
-    return { type: 's', value: String(v) };
-  });
-  udpPort.send({ address: ableton_address, args }, ABLETON_HOST, ABLETON_PORT);
+  const address = `device${deviceId}`;
+  const vals = Array.isArray(value) ? value : [value];
+  const v = vals[0];
+  const isInt = type === 'i' && Number.isInteger(v);
+  const packet = buildOscMessage(address, paramName, typeof v === 'number' ? v : 0, isInt);
+  abletonSocket.send(packet, ABLETON_PORT, ABLETON_HOST);
   ableton_msgs_sent++;
 }
 
@@ -478,7 +498,8 @@ wss.on('connection', (ws, req) => {
     type: 'INITIAL_STATE',
     namespace: buildTree(),
     devices: Array.from(devices.values()),
-    subscribers: Array.from(oscSubscribers.values())
+    subscribers: Array.from(oscSubscribers.values()),
+    discoveredDevices: Array.from(discoveredDevices.values())
   }));
 
   ws.on('message', (raw) => {
@@ -526,6 +547,26 @@ wss.on('connection', (ws, req) => {
       }
 
       if (msg.type === 'RELOAD_MANIFESTS') loadManifests();
+
+      if (msg.type === 'ADD_DISCOVERED' && msg.host && msg.port) {
+        const nextId = Math.max(0, ...Array.from(devices.keys())) + 1;
+        const name = (msg.name || `Device${nextId}`).trim();
+        const manifest = {
+          id: nextId,
+          name,
+          type: 'oscquery-device',
+          host: msg.host,
+          oscQueryPort: msg.port,
+          enabled: true,
+          description: `Bonjour ile keşfedildi`
+        };
+        const filename = `${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${nextId}.json`;
+        writeFileSync(join(MANIFESTS_DIR, filename), JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+        discoveredDevices.delete(`${msg.host}:${msg.port}`);
+        console.log(`  ➕ Yeni cihaz eklendi: ${name} (ID ${nextId})`);
+        loadManifests();
+        broadcastDiscovered();
+      }
     } catch (e) {
       console.error('  ⚠  WS mesaj hatası:', e);
     }
@@ -536,13 +577,49 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-server.listen(HTTP_PORT, () => { publishBonjour(); });
+server.listen(HTTP_PORT, () => { publishBonjour(); startDiscovery(); });
 
 const bonjour = new Bonjour();
 function publishBonjour() {
   bonjour.publish({ name: HUB_NAME, type: 'oscjson', protocol: 'tcp', port: HTTP_PORT });
   bonjour.publish({ name: HUB_NAME, type: 'osc', protocol: 'udp', port: OSC_PORT });
   console.log('  Bonjour duyuruldu  ✓');
+}
+
+// ============ BONJOUR DISCOVERY ============
+interface DiscoveredDevice { name: string; host: string; port: number; firstSeen: number; }
+const discoveredDevices = new Map<string, DiscoveredDevice>();
+
+function isAlreadyKnown(host: string, port: number): boolean {
+  return Array.from(devices.values()).some(d => d.host === host && d.oscQueryPort === port);
+}
+
+function broadcastDiscovered() {
+  broadcastToClients({ type: 'DISCOVERED_DEVICES', devices: Array.from(discoveredDevices.values()) });
+}
+
+function startDiscovery() {
+  const browser = bonjour.find({ type: 'oscjson', protocol: 'tcp' });
+
+  browser.on('up', (service: any) => {
+    const ipv4 = (service.addresses as string[] || []).find(a => a.includes('.'));
+    const host = ipv4 || service.host;
+    const port = service.port as number;
+    if (port === HTTP_PORT) return;          // kendimiz
+    if (isAlreadyKnown(host, port)) return;  // zaten manifest'te
+
+    const key = `${host}:${port}`;
+    discoveredDevices.set(key, { name: service.name, host, port, firstSeen: Date.now() });
+    console.log(`  🔍 Yeni cihaz keşfedildi: ${service.name} @ ${host}:${port}`);
+    broadcastDiscovered();
+  });
+
+  browser.on('down', (service: any) => {
+    const ipv4 = (service.addresses as string[] || []).find((a: string) => a.includes('.'));
+    const host = ipv4 || service.host;
+    const key = `${host}:${service.port}`;
+    if (discoveredDevices.delete(key)) broadcastDiscovered();
+  });
 }
 
 // Periyodik olarak msg count'u tarayıcıya gönder

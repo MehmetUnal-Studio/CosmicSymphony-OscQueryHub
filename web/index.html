@@ -185,6 +185,40 @@
   .ableton-banner-stats { font-size: 0.7rem; color: var(--ink-dim); }
   .ableton-banner-stats .num { color: var(--accent); font-size: 1rem; }
   code { background: var(--bg-3); padding: 0.1rem 0.4rem; border-radius: 2px; font-size: 0.85em; }
+
+  /* Discovered devices */
+  .discovered-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;
+  }
+  .discovered-card {
+    background: var(--bg-2); border: 1px dashed var(--osc);
+    padding: 1.2rem; position: relative; opacity: 0.85;
+    transition: opacity 0.2s;
+  }
+  .discovered-card:hover { opacity: 1; }
+  .discovered-tag {
+    position: absolute; top: 0.6rem; right: 0.8rem;
+    font-size: 0.6rem; color: var(--osc); letter-spacing: 0.15em;
+  }
+  .discovered-name {
+    font-size: 1rem; color: var(--osc); margin-bottom: 0.3rem;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .discovered-pulse {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--osc);
+    animation: pulse 1.5s ease-in-out infinite; flex-shrink: 0;
+  }
+  .discovered-host {
+    font-size: 0.75rem; color: var(--ink-dim); margin-bottom: 0.8rem;
+    border-top: 1px solid var(--line); padding-top: 0.6rem; margin-top: 0.4rem;
+  }
+  .discovered-name-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--osc);
+    color: var(--ink); padding: 0.35rem 0.5rem; font-family: inherit;
+    font-size: 0.8rem; margin-bottom: 0.5rem; outline: none;
+    display: none;
+  }
+  .discovered-name-input:focus { border-color: var(--signal); }
 </style>
 </head>
 <body>
@@ -223,6 +257,12 @@
   <div class="empty">Manifest yükleniyor…</div>
 </div>
 
+<h2 id="discovered-header" style="display:none">
+  <span>Ağda Keşfedilen</span>
+  <span class="hint">Manifest'te olmayan yeni cihazlar · EKLE ile kaydet</span>
+</h2>
+<div class="discovered-grid" id="discovered"></div>
+
 <script>
   const deviceParams = new Map();   // deviceId -> Map(path -> data)
   const expandedDevices = new Set();
@@ -232,6 +272,8 @@
   let abletonTotal = 0;
   let ws = null;
 
+  const elDiscovered       = document.getElementById('discovered');
+  const elDiscoveredHeader = document.getElementById('discovered-header');
   const elStatus    = document.getElementById('status');
   const elStatusText = document.getElementById('status-text');
   const elDevices   = document.getElementById('devices');
@@ -501,6 +543,7 @@
 
       if (msg.type === 'INITIAL_STATE') {
         if (msg.devices) { for (const d of msg.devices) devices.set(d.id, d); renderDevices(); }
+        if (msg.discoveredDevices) renderDiscovered(msg.discoveredDevices);
         processInitialState(msg.namespace);
         updateStats();
       }
@@ -529,7 +572,38 @@
         if (msg.abletonTotal) abletonTotal = msg.abletonTotal;
         elAbletonTotal.textContent = abletonTotal;
       }
+      else if (msg.type === 'DISCOVERED_DEVICES') {
+        renderDiscovered(msg.devices || []);
+      }
     };
+  }
+
+  function renderDiscovered(list) {
+    elDiscoveredHeader.style.display = list.length > 0 ? '' : 'none';
+    elDiscovered.innerHTML = '';
+    for (const dev of list) {
+      const card = document.createElement('div');
+      card.className = 'discovered-card';
+      card.innerHTML = `
+        <div class="discovered-tag">KEŞFEDILDI</div>
+        <div class="discovered-name">
+          <div class="discovered-pulse"></div>
+          <span>${dev.name}</span>
+        </div>
+        <div class="discovered-host">${dev.host} : ${dev.port}</div>
+        <input class="discovered-name-input" type="text" value="${dev.name}" placeholder="Cihaz adı…">
+        <div style="display:flex; gap:0.5rem">
+          <button class="btn" onclick="this.closest('.discovered-card').querySelector('.discovered-name-input').style.display='block'; this.style.display='none'; this.nextElementSibling.style.display='block'">+ EKLE</button>
+          <button class="btn primary" style="display:none" onclick="addDiscovered('${dev.host}', ${dev.port}, this.closest('.discovered-card').querySelector('.discovered-name-input').value)">ONAYLA</button>
+        </div>
+      `;
+      elDiscovered.appendChild(card);
+    }
+  }
+
+  function addDiscovered(host, port, name) {
+    if (ws && ws.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type: 'ADD_DISCOVERED', host, port, name: name.trim() || undefined }));
   }
 
   connect();
