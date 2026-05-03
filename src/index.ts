@@ -16,6 +16,19 @@ const ABLETON_PORT = 10000;
 const HUB_NAME = 'OSCQuery Hub';
 const MANIFESTS_DIR = './manifests';
 
+// ============ GÜVENLİK SABİTLERİ ============
+const MAX_SUBSCRIBERS = 50;
+const MAX_NAMESPACE   = 10_000;
+const OSC_PATH_RE     = /^\/[a-zA-Z0-9_./-]{1,256}$/;
+
+function isValidHost(host: string): boolean {
+  return /^(localhost|127\.0\.0\.1|((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))$/.test(host)
+    || /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$/.test(host);
+}
+function isValidOscPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1024 && port <= 65535;
+}
+
 // ============ MANIFEST TYPES ============
 interface DeviceManifest {
   id: number;
@@ -208,6 +221,16 @@ function saveManifest(deviceId: number, updates: Partial<DeviceManifest>): { ok:
     return { ok: false, error: `Cihaz bulunamadı: ID ${deviceId}` };
   }
 
+  if (updates.host !== undefined && !isValidHost(updates.host)) {
+    return { ok: false, error: `Geçersiz host: ${updates.host}` };
+  }
+  if (updates.oscQueryPort !== undefined && !isValidOscPort(updates.oscQueryPort)) {
+    return { ok: false, error: `Geçersiz port: ${updates.oscQueryPort}` };
+  }
+  if (updates.name !== undefined && (updates.name.trim().length === 0 || updates.name.length > 64)) {
+    return { ok: false, error: 'Geçersiz cihaz adı' };
+  }
+
   const updated: DeviceManifest = {
     id: dev.id,
     name: updates.name ?? dev.name,
@@ -362,7 +385,12 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
   if (oscMsg.address === '/subscribe' && info) {
     const port = oscMsg.args[0]?.value;
     if (typeof port === 'number') {
-      oscSubscribers.set(subscriberKey(info.address, port), {
+      const key = subscriberKey(info.address, port);
+      if (!oscSubscribers.has(key) && oscSubscribers.size >= MAX_SUBSCRIBERS) {
+        console.log(`  ⚠  Abone limiti aşıldı (${MAX_SUBSCRIBERS}), reddedildi: ${info.address}:${port}`);
+        return;
+      }
+      oscSubscribers.set(key, {
         address: info.address, port, registeredAt: Date.now()
       });
       console.log(`  📡 Abone oldu: ${info.address}:${port}`);
@@ -390,6 +418,10 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
     source: from
   };
   const isNew = !namespace.has(oscMsg.address);
+  if (isNew && namespace.size >= MAX_NAMESPACE) {
+    console.log(`  ⚠  Namespace limiti aşıldı (${MAX_NAMESPACE}), path atlandı: ${oscMsg.address}`);
+    return;
+  }
   namespace.set(oscMsg.address, param);
 
   const marker = isNew ? '🆕' : '  ';
@@ -436,7 +468,17 @@ function buildTree(): any {
 
 // ============ HTTP SERVER ============
 const app = express();
-app.use((_req, res, next) => { res.header('Access-Control-Allow-Origin', '*'); next(); });
+app.use((_req, res, next) => {
+  const origin = _req.headers.origin;
+  if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    res.header('Access-Control-Allow-Origin', origin || `http://localhost:${HTTP_PORT}`);
+  }
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'SAMEORIGIN');
+  res.header('Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src ws: wss: http://localhost:* http://127.0.0.1:*");
+  next();
+});
 app.use('/ui', express.static('web'));
 app.use(express.json());
 
@@ -487,7 +529,7 @@ app.get(/^\/(.+)/, (req, res) => {
 });
 
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 65_536 });
 
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress;
@@ -507,6 +549,8 @@ wss.on('connection', (ws, req) => {
       const msg = JSON.parse(raw.toString());
 
       if (msg.type === 'SET' && msg.path && msg.value !== undefined) {
+        if (!OSC_PATH_RE.test(msg.path)) return;
+        if (!namespace.has(msg.path) && namespace.size >= MAX_NAMESPACE) return;
         const newValue = Array.isArray(msg.value) ? msg.value : [msg.value];
         const existing = namespace.get(msg.path);
         const param: Parameter = existing || {
@@ -549,8 +593,17 @@ wss.on('connection', (ws, req) => {
       if (msg.type === 'RELOAD_MANIFESTS') loadManifests();
 
       if (msg.type === 'ADD_DISCOVERED' && msg.host && msg.port) {
+        if (!isValidHost(String(msg.host))) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: `Geçersiz host: ${msg.host}` }));
+          return;
+        }
+        if (!isValidOscPort(Number(msg.port))) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: `Geçersiz port: ${msg.port}` }));
+          return;
+        }
         const nextId = Math.max(0, ...Array.from(devices.keys())) + 1;
-        const name = (msg.name || `Device${nextId}`).trim();
+        const rawName = (msg.name || `Device${nextId}`).trim().slice(0, 64);
+        const name = rawName.length > 0 ? rawName : `Device${nextId}`;
         const manifest = {
           id: nextId,
           name,
@@ -646,8 +699,8 @@ feedbackSocket.on('message', (buf) => {
   }
 });
 
-feedbackSocket.bind(8889, () => {
-  console.log('  ◄ M4L geri kanal:   UDP port 8889');
+feedbackSocket.bind(8889, '127.0.0.1', () => {
+  console.log('  ◄ M4L geri kanal:   UDP 127.0.0.1:8889');
 });
 
 // Periyodik olarak msg count'u tarayıcıya gönder

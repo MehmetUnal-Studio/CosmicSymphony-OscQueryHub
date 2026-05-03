@@ -1,9 +1,9 @@
 {
-  "id": 10,
-  "name": "MaxOSCQuery",
+  "id": 12,
+  "name": "TD-LeapMotion",
   "type": "oscquery-device",
   "host": "192.168.1.101",
-  "oscQueryPort": 8000,
-  "enabled": false,
+  "oscQueryPort": 9012,
+  "enabled": true,
   "description": "Bonjour ile keşfedildi"
 }

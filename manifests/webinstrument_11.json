@@ -4,6 +4,6 @@
   "type": "oscquery-device",
   "host": "192.168.1.152",
   "oscQueryPort": 9100,
-  "enabled": true,
+  "enabled": false,
   "description": "Bonjour ile keşfedildi"
 }
