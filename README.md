@@ -1,119 +1,119 @@
 # CosmicSymphony — OSCQuery Hub
 
-Sahnedeki tüm OSC cihazlarını (LeapMotion, Spektra tabletler, VR, Ring, WebInstrument vb.) tek bir merkezi Node.js hub üzerinden Ableton Live'a bağlayan sistem.
+A central Node.js hub that bridges all stage OSC devices (LeapMotion, Spektra tablets, VR, Ring, WebInstrument, etc.) to Ableton Live through a single OSCQuery namespace.
 
-Eski Max/MSP Standalone Manager'ın yerini alır.
+Replaces the legacy Max/MSP Standalone Manager.
 
-→ [Görsel teknik anlatım](https://mehmetunal-studio.github.io/CosmicSymphony-OscQueryHub/docs/visual-overview.html)
+→ [Visual technical overview](https://mehmetunal-studio.github.io/CosmicSymphony-OscQueryHub/docs/visual-overview.html)
 
 ---
 
-## Mimari
+## Architecture
 
 ```
                    ┌─────────────────────────────────────┐
                    │           Node.js Hub               │
-[OSCQuery cihaz]──►│  • OSCQuery client (HTTP+WS)        │──UDP──►[Ableton M4L]
-[Klasik OSC]   ───►│  • UDP OSC listener        :5006    │       (port 10000)
-[Max dict.JSON]───►│  • JSON UDP listener       :5007    │
-[TouchOSC]     ───►│  • Bonjour/mDNS discovery           │◄──UDP──[M4L feedback]
+[OSCQuery device]─►│  • OSCQuery client (HTTP+WS)        │──UDP──►[Ableton M4L]
+[Classic OSC]   ──►│  • UDP OSC listener        :5006    │       (port 10000)
+[Max dict.JSON]──►│  • JSON UDP listener       :5007    │
+[TouchOSC]      ──►│  • Bonjour/mDNS discovery           │◄──UDP──[M4L feedback]
                    │  • WebSocket broadcast              │       (port 8889)
-                   │  • Web kontrol paneli      :5555    │
+                   │  • Web control panel       :5555    │
                    └─────────────────────────────────────┘
                                     ▲
-                                    │ tarayıcı / iPad
+                                    │ browser / iPad
                                     │ http://localhost:5555/ui/
 ```
 
-- **Hub:** Bu repo — Node.js + TypeScript
-- **Ses:** Ableton Live + Max for Live ("Cosmic Unity" cihazı)
-- **Görsel:** TouchDesigner
-- **Kontrol:** TouchOSC (iPad), web tarayıcı
+- **Hub:** This repo — Node.js + TypeScript
+- **Audio:** Ableton Live + Max for Live ("Cosmic Unity" device)
+- **Visual:** TouchDesigner
+- **Control:** TouchOSC (iPad), web browser
 
 ---
 
-## Son Yenilikler
+## What's New
 
 ### Hub backend
-- **JSON UDP listener (port 5007)** — Max'ten `dict.serialize` → `udpsend 127.0.0.1 5007` ile JSON nesnesi yollayabilirsin. `_device` alanı kart eşleştirmesini yapar; diğer key'ler otomatik namespace'e yazılır
-- **`permanent` flag** — Manifest'te `"permanent": true` olan cihazlar (Tablet1-3, TV, VR, Ring, LeapMotion) durumdan bağımsız olarak panelde sabit kalır
-- **Bug fix'ler** — NaN guard'ı, WebSocket `error` cleanup, manifest silindiğinde `deviceMsgCount` temizliği, eksik `Parameter` alanları
-- **Test cihazı emülatörü** — `npm run test-device` ile mock OSCQuery cihazı çalıştırılabilir
+- **JSON UDP listener (port 5007)** — Send a JSON object from Max via `dict.serialize` → `udpsend 127.0.0.1 5007`. The `_device` field maps to a card; remaining keys are auto-written to the namespace.
+- **`permanent` flag** — Devices with `"permanent": true` (Tablet1-3, TV, VR, Ring, LeapMotion) stay pinned in the panel regardless of connection state.
+- **Bug fixes** — NaN guards, WebSocket `error` cleanup, `deviceMsgCount` cleanup on manifest deletion, missing `Parameter` fields.
+- **Test device emulator** — `npm run test-device` spins up a mock OSCQuery device.
 
-### Web arayüzü
-- **Tam İngilizce arayüz** — sahne kullanımı için locale tutarlı (`<html lang="en">`)
-- **Modern tipografi** — Inter (sans) + JetBrains Mono (mono), `tabular-nums` sayısal kolonlar
-- **Aydınlatılmış offline kartlar** — eski `opacity: 0.45` gizliydi; artık metinler okunaklı, OFFLINE rozeti kırmızı, Enable butonu cyan tıklanabilir
-- **Generatif arka plan** — `algo-art.js` ambient flow-field + mouse halo; `prefers-reduced-motion` saygılı, tab arka plana düşünce duruyor
+### Web UI
+- **Full English locale** — locale-consistent for live/stage use (`<html lang="en">`).
+- **Modern typography** — Inter (sans) + JetBrains Mono (mono), `tabular-nums` numeric columns.
+- **Brightened offline cards** — the old `opacity: 0.45` made them invisible; now text is readable, OFFLINE badge is red, Enable button is cyan and clickable.
+- **Generative background** — `algo-art.js` ambient flow-field + mouse halo; respects `prefers-reduced-motion`, pauses on tab hide.
 
-### Geliştirme süreci
-- **AI destekli code review** — Husky pre-commit/pre-push hook'ları her staged diff'i Anthropic API ile inceler (aşağıda detay)
+### Development workflow
+- **AI-assisted code review** — Husky pre-commit/pre-push hooks run every staged diff through the Anthropic API (details below).
 
 ---
 
-## Kurulum
+## Setup
 
-### Gereksinimler
+### Requirements
 
-- [Node.js](https://nodejs.org) v18 veya üzeri
-- Terminal (macOS: Terminal.app veya iTerm)
-- `ANTHROPIC_API_KEY` (opsiyonel — sadece AI review hook'larını kullanmak istiyorsan)
+- [Node.js](https://nodejs.org) v18 or later
+- A terminal (macOS: Terminal.app or iTerm)
+- `ANTHROPIC_API_KEY` (optional — only needed if you want the AI review hooks)
 
-### Adımlar
+### Steps
 
 ```bash
-# 1. Repoyu klonla
+# 1. Clone the repo
 git clone https://github.com/MehmetUnal-Studio/CosmicSymphony-OscQueryHub.git
 cd CosmicSymphony-OscQueryHub
 
-# 2. Bağımlılıkları kur
+# 2. Install dependencies
 npm install
 
-# 3. Çalıştır
+# 3. Run
 npm run dev
 ```
 
-Tarayıcıda aç:
+Open in browser:
 ```
 http://localhost:5555/ui/
 ```
 
 ---
 
-## Çalıştırma
+## Running
 
 ```bash
-# Geliştirme modu (dosya değişince otomatik yeniler)
+# Dev mode (auto-reloads on file change)
 npm run dev
 
-# Sadece çalıştır (izlemeden)
+# Just run (no watcher)
 npm start
 
-# Mock OSCQuery cihazı (test için)
+# Mock OSCQuery device (for testing)
 npm run test-device
 ```
 
-Durdurmak için: `Ctrl + C`
+Stop with `Ctrl + C`.
 
 ---
 
-## Portlar
+## Ports
 
-| Port  | Protokol | Ne için |
+| Port  | Protocol | Purpose |
 |-------|----------|---------|
-| 5555  | TCP      | Web arayüzü + WebSocket |
-| 5006  | UDP      | Klasik OSC dinleme |
-| 5007  | UDP      | JSON UDP listener (Max `dict.serialize` kanalı) |
-| 10000 | UDP      | Ableton M4L `udpreceive` (hub buraya gönderir) |
-| 8889  | UDP      | M4L → Hub geri kanal (feedback) |
+| 5555  | TCP      | Web UI + WebSocket |
+| 5006  | UDP      | Classic OSC listener |
+| 5007  | UDP      | JSON UDP listener (Max `dict.serialize` channel) |
+| 10000 | UDP      | Ableton M4L `udpreceive` (hub forwards here) |
+| 8889  | UDP      | M4L → Hub feedback channel |
 
 ---
 
-## Cihaz Ekleme
+## Adding Devices
 
-Her cihaz `manifests/` klasöründe bir JSON dosyasıyla tanımlanır.
+Each device is defined by a JSON file in `manifests/`.
 
-### Manuel ekleme
+### Manual
 
 ```json
 {
@@ -128,28 +128,28 @@ Her cihaz `manifests/` klasöründe bir JSON dosyasıyla tanımlanır.
 }
 ```
 
-| Alan | Açıklama |
-|------|----------|
-| `id` | Cihaz ID'si (Ableton'a `device<id>` olarak yansır) |
-| `name` | OSC namespace prefix'i (`/Tablet3/...`) |
-| `type` | Görsel etiket (UI'da subtitle olarak görünür) |
-| `host`, `oscQueryPort` | OSCQuery server'ın yeri |
-| `enabled` | Hub bağlanmaya çalışır mı? |
-| `permanent` | `true` ise UI'da daima görünür (offline da olsa) |
-| `description` | İnsan-okunaklı not |
+| Field | Description |
+|-------|-------------|
+| `id` | Device ID (forwarded to Ableton as `device<id>`) |
+| `name` | OSC namespace prefix (`/Tablet3/...`) |
+| `type` | Visual label (rendered as the card subtitle) |
+| `host`, `oscQueryPort` | Where the device's OSCQuery server lives |
+| `enabled` | Should the hub attempt to connect? |
+| `permanent` | If `true`, always shown in the UI (even when offline) |
+| `description` | Human-readable note |
 
-Sunucuyu yeniden başlatmana gerek yok — manifest değişikliklerini canlı algılar.
+The hub watches `manifests/` live — no restart needed.
 
-### Otomatik keşif (Bonjour/mDNS)
+### Auto-discovery (Bonjour/mDNS)
 
-Ağda `_oscjson._tcp` yayınlayan cihazlar otomatik tespit edilir. Web arayüzünde **"Discovered Devices"** bölümünde görünür, **+ Add** butonuyla sisteme katılır. ID otomatik atanır (10, 11, ...).
+Devices broadcasting `_oscjson._tcp` are auto-detected. They appear under **"Discovered Devices"** in the web UI; click **+ Add** to register them. ID is auto-assigned (10, 11, ...).
 
 ---
 
-## Max → Hub İletişimi (3 Yol)
+## Max → Hub Communication (3 ways)
 
-### 1. Klasik OSC — port 5006
-En basit yöntem. Veri kör UDP olarak gönderilir, hub yorumlar.
+### 1. Classic OSC — port 5006
+Simplest. Data is sent as blind UDP, the hub interprets it.
 
 ```
 [flonum]
@@ -160,7 +160,7 @@ En basit yöntem. Veri kör UDP olarak gönderilir, hub yorumlar.
 ```
 
 ### 2. JSON UDP — port 5007
-Max dict'ini tek pakette gönder. `_device` alanı eşleştirme yapar.
+Send an entire Max dict in one packet. The `_device` field handles routing.
 
 ```
 [dict mydict]
@@ -175,8 +175,8 @@ Format:
 { "_device": "tablet3", "x": 0.5, "y": 0.7, "pressure": 0.92 }
 ```
 
-### 3. Tam OSCQuery server (Max içinde)
-Cihaz olarak hub tarafında "connected" görünmek istiyorsan: `oscquery-max` paketi (Çağatay Güçlü, defektu) ile Max içinde gerçek OSCQuery server aç. Hub HTTP'den namespace'i okur, WebSocket'tan canlı değer alır, kart UI'da Params sayısı + Connected status gösterir.
+### 3. Full OSCQuery server (inside Max)
+If you want the device to show as "connected" on the hub side, run a real OSCQuery server inside Max using the `oscquery-max` package (Çağatay Güçlü / defektu). The hub reads the namespace via HTTP, opens a WebSocket for live values, and the card UI reports `Params` count + `Connected` status.
 
 ```
 [node.script oscquery.server.js http_port=9010 service_name=tablet3]
@@ -184,165 +184,165 @@ Cihaz olarak hub tarafında "connected" görünmek istiyorsan: `oscquery-max` pa
 
 ---
 
-## Ableton M4L Bağlantısı
+## Ableton M4L Integration
 
-Hub her cihazdan gelen parametreleri şu formatta Ableton'a iletir:
+The hub forwards each device's parameters to Ableton in this format:
 
 ```
 device9 /HandR0/palm/Tx 0.5
 ```
 
-- `device9` → Cihaz ID'si (Max'teki `route` nesnesi bunu filtreler)
-- `/HandR0/palm/Tx` → Parametre yolu
-- `0.5` → Değer
+- `device9` → device ID (Max's `route` object filters on this)
+- `/HandR0/palm/Tx` → parameter path
+- `0.5` → value
 
-M4L patch'te `udpreceive 10000` ile dinlenir, `sprintf "device%ld"` + `route` ile cihaz ayrıştırılır.
+In M4L, listen with `udpreceive 10000`, then use `sprintf "device%ld"` + `route` to demultiplex by device.
 
-### Geri kanal (M4L → Hub)
+### Feedback channel (M4L → Hub)
 
-M4L, hub'a port **8889**'dan mesaj gönderebilir. Web arayüzünde her cihaz kartında `◄ M4L` göstergesi yanıp söner.
+M4L can send messages back to the hub on port **8889**. The web UI flashes a `◄ M4L` indicator on each device card.
 
-M4L patch'te: `udpsend localhost 8889`
+In M4L: `udpsend localhost 8889`
 
 ---
 
-## AI Destekli Geliştirme
+## AI-Assisted Development
 
-Bu proje "human + AI pair-programming" pattern'iyle geliştiriliyor. AI rolünün üç katmanı var:
+This project follows a "human + AI pair-programming" pattern. AI plays three distinct roles:
 
-### Katman 1 — `CLAUDE.md`: Kalıcı bağlam
-Repo kökündeki [CLAUDE.md](CLAUDE.md), AI'ya projenin amacını, mimarisini, namespace konvansiyonunu ve geliştirme kurallarını anlatır. AI her oturumda bunu okuyup kararlarını ona göre verir — örneğin yeni cihaz tipi eklerken neden manifest formatına uyduğunu, log'ların neden `logs/` klasörüne tarih damgalı yazıldığını bilir.
+### Layer 1 — `CLAUDE.md`: persistent context
+The repo-root [CLAUDE.md](CLAUDE.md) tells the AI the project's purpose, architecture, namespace convention, and development rules. The AI reads this at the start of every session and grounds its decisions in it — for example, why a new device type follows the manifest format, why logs land in `logs/` with a timestamp.
 
-### Katman 2 — Pre-commit AI review
-`.husky/pre-commit` hook'u her commit'ten önce çalışır:
+### Layer 2 — pre-commit AI review
+The `.husky/pre-commit` hook runs before every commit:
 
 ```
-npx lint-staged              # prettier formatting
+npx lint-staged                   # prettier formatting
 node scripts/validate-staged.js   # AI review of staged diff
 ```
 
-`scripts/validate-staged.js`, sadece **staged diff'i** Anthropic Claude API'sine gönderir. AI şu kuralları kontrol eder ([.ai-rules.json](.ai-rules.json)):
+`scripts/validate-staged.js` sends only the **staged diff** to the Anthropic Claude API. The AI checks the rules in [.ai-rules.json](.ai-rules.json):
 
-- Güvenlik açıkları (XSS, SQL injection, command injection, path traversal)
-- Memory leak riski (Map/Set'e ekleme var ama silme yok mu?)
-- NaN/null/undefined kontrol eksikleri
-- Race condition kalıpları
-- WebSocket cleanup'ı (close + error handler)
+- Security issues (XSS, SQL/command injection, path traversal)
+- Memory leak risk (Map/Set with adds but no deletes?)
+- Missing NaN/null/undefined checks
+- Race condition patterns
+- WebSocket cleanup (close + error handlers)
 
-Bulgular doğrudan terminale basılır. Kritik bir hata varsa commit reddedilir; küçük öneriler bilgi olarak geçer ve sen geçirip geçirmemeyi seçersin.
+Findings print directly to the terminal. Critical issues block the commit; minor suggestions are informational and you decide whether to address them.
 
-**Önemli:** Hook sadece diff'i okur, codebase'in tamamını değil — token maliyeti küçük kalır, yanıt 5–15s'de döner.
+**Important:** The hook reads only the diff, not the whole codebase — token cost stays small, response returns in 5–15s.
 
-### Katman 3 — Pre-push AI review
-`.husky/pre-push` hook'u repository'ye gönderilmemiş commit yığınını topluca gözden geçirir:
+### Layer 3 — pre-push AI review
+The `.husky/pre-push` hook reviews the stack of unpushed commits as a whole:
 
 ```
 node scripts/validate-push.js
 ```
 
-Daha derin analiz yapar — birden fazla commit'in birlikte tutarlı olup olmadığını, geriye dönük uyumluluk kırılıp kırılmadığını sorgular. Sonuç anlık olarak terminalde özetlenir, push akışı bekletilir.
+Goes deeper — checks whether commits are coherent together, whether backwards compatibility was broken. Output is summarized in the terminal; the push waits.
 
-### Cache mekanizması
-[scripts/cache-utils.js](scripts/cache-utils.js) — aynı diff hash'i için aynı cevabı tekrar üretmemek için yerelde `.ai-review-cache.json` dosyası tutulur (gitignore'da, sadece local). Format/whitespace değişikliği zaten lint-staged tarafından normalize edildiği için cache hit oranı yüksek.
+### Cache mechanism
+[scripts/cache-utils.js](scripts/cache-utils.js) keeps a local `.ai-review-cache.json` so the same diff hash never re-runs (gitignored, local only). Since lint-staged normalizes formatting/whitespace, the cache hit rate is high.
 
-### AI'yi devre dışı bırakma
-Hook'lar `ANTHROPIC_API_KEY` environment değişkenini ister. Set edilmemişse hook fail eder. Bu durumlarda:
+### Disabling AI
+The hooks require `ANTHROPIC_API_KEY` in the environment. If it's not set, the hooks fail. To work around:
 
 ```bash
-git commit --no-verify   # tek seferlik bypass
-git push   --no-verify   # push hook'unu atla
+git commit --no-verify   # one-off bypass
+git push   --no-verify   # skip the push hook
 ```
 
-Veya başka bir editör/oturum için API key'i `.env`'e koy (gitignore'da):
+Or persist the key in a local `.env` (gitignored):
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Sürecin pratiği
-Tipik bir geliştirme döngüsü:
+### How the loop feels in practice
+A typical iteration:
 
-1. Sen Claude Code (terminal) veya Claude Desktop ile bir oturum açıyorsun
-2. AI `CLAUDE.md` + ilgili dosyaları okuyor, plan yapıyor, kod yazıyor
-3. Kod editöründe değişikliği inceliyor + test ediyorsun
-4. `git commit` → pre-commit hook AI review'ı çalıştırıyor (ikinci AI gözü)
-5. `git push` → pre-push hook daha derin tarama yapıyor
-6. Değişiklik canlıya çıkıyor
+1. You open a Claude Code (terminal) or Claude Desktop session
+2. The AI reads `CLAUDE.md` + relevant files, plans, writes code
+3. You inspect the diff in your editor and test it
+4. `git commit` → the pre-commit hook runs the AI review (a second AI pair of eyes)
+5. `git push` → the pre-push hook runs the deeper review
+6. The change ships
 
-Pratikte iki farklı AI rolü var: birinci AI (oturumda) **üretici**, ikinci AI (hook'larda) **denetleyici**. Üretici AI'nın yanlışını denetleyici AI yakalayabiliyor; insan zaten döngünün ortasında.
+In practice there are two AI roles: the first AI (in your session) is the **producer**, the second AI (in the hooks) is the **reviewer**. The reviewer can catch the producer's mistakes; the human stays in the middle of the loop.
 
 ---
 
-## Klasör Yapısı
+## Folder Layout
 
 ```
 oscquery-hub/
 ├── src/
-│   ├── index.ts              ← Hub'ın beyni (HTTP/WS/UDP/JSON UDP/Bonjour)
-│   ├── oscquery-client.ts    ← Cihazlara bağlanan OSCQuery client
-│   └── test-device.ts        ← Mock cihaz emülatörü (npm run test-device)
-├── manifests/                ← Cihaz tanımları (JSON)
+│   ├── index.ts              ← Hub brain (HTTP/WS/UDP/JSON UDP/Bonjour)
+│   ├── oscquery-client.ts    ← OSCQuery client used to connect to devices
+│   └── test-device.ts        ← Mock device emulator (npm run test-device)
+├── manifests/                ← Device definitions (JSON)
 ├── web/
-│   ├── index.html            ← Web kontrol paneli
-│   ├── algo-art.js           ← Generatif ambient arka plan (drop-in)
-│   └── test-device.html      ← Test cihazı için companion sayfa
-├── scripts/                  ← AI review araçları
-│   ├── ai-review.js              ← Anthropic API çağrısı + prompt'lar
+│   ├── index.html            ← Web control panel
+│   ├── algo-art.js           ← Ambient generative background (drop-in)
+│   └── test-device.html      ← Companion page for the test device
+├── scripts/                  ← AI review tooling
+│   ├── ai-review.js              ← Anthropic API call + prompts
 │   ├── validate-staged.js        ← Pre-commit hook entry
 │   ├── validate-push.js          ← Pre-push hook entry
-│   ├── diff-utils.js             ← Git diff parse helper'ları
-│   ├── cache-utils.js            ← Yerel review cache
-│   └── output-utils.js           ← Terminal renkli çıktı
-├── .husky/                   ← Git hook'ları
+│   ├── diff-utils.js             ← Git diff parse helpers
+│   ├── cache-utils.js            ← Local review cache
+│   └── output-utils.js           ← Terminal coloring
+├── .husky/                   ← Git hooks
 │   ├── pre-commit
 │   └── pre-push
-├── .ai-rules.json            ← AI review için kural seti
+├── .ai-rules.json            ← Rule set for AI review
 ├── .prettierrc               ← Formatter config
-├── docs/                     ← Teknik belgeler
-└── CLAUDE.md                 ← AI bağlam dosyası (kalıcı project memory)
+├── docs/                     ← Technical documentation
+└── CLAUDE.md                 ← AI context file (persistent project memory)
 ```
 
 ---
 
-## Sorun Giderme
+## Troubleshooting
 
-**Hub başlamıyor — port meşgul hatası**
+**Hub won't start — port already in use**
 ```bash
-# 5555 portunu tutan süreci bul ve öldür
+# Find and kill whatever holds port 5555
 lsof -ti TCP:5555 | xargs kill -9
 ```
 
-**Cihaz görünmüyor**
-- `manifests/` dosyasında `"enabled": true` olduğunu kontrol et
-- Host IP adresinin doğru olduğunu kontrol et (`ping 192.168.1.xxx`)
-- Cihaz ile hub'ın aynı ağda olduğundan emin ol
-- `permanent: true` ise yine de görünür ama "OFFLINE" badge'i ile
+**Device doesn't appear**
+- Check `"enabled": true` in the manifest
+- Verify the host IP is correct (`ping 192.168.1.xxx`)
+- Make sure device and hub share the same network
+- If `permanent: true`, the card still appears with an "OFFLINE" badge
 
-**Ableton'a veri gitmiyor**
-- M4L device'ta `udpreceive 10000` açık olmalı
-- `sudo tcpdump -i lo0 -n udp port 10000` ile trafiği kontrol et
+**No data reaching Ableton**
+- M4L device must have `udpreceive 10000` open
+- Sniff traffic: `sudo tcpdump -i lo0 -n udp port 10000`
 
-**JSON UDP'den gelen veri kart sayacını artırmıyor**
-- JSON içinde `"_device": "<manifest_name>"` alanı doğru mu?
-- Cihaz manifest'inin `name` alanıyla birebir eşleşmeli (büyük/küçük harf duyarlı)
+**JSON UDP isn't bumping the card's message counter**
+- Is the JSON `"_device": "<manifest_name>"` field correct?
+- It must match the device manifest's `name` exactly (case-sensitive)
 
-**Pre-commit hook fail ediyor**
-- `ANTHROPIC_API_KEY` environment'ta set mi? `echo $ANTHROPIC_API_KEY`
-- Geçici geç: `git commit --no-verify`
-- Hook'u tamamen kapat: `.husky/pre-commit` içeriğini boşalt veya dosyayı sil
+**Pre-commit hook fails**
+- Is `ANTHROPIC_API_KEY` set? `echo $ANTHROPIC_API_KEY`
+- One-off skip: `git commit --no-verify`
+- Disable entirely: empty out or delete `.husky/pre-commit`
 
 ---
 
-## Geliştirme
+## Development
 
 ```bash
-# Değişiklik
+# Make changes
 git add .
-git commit -m "ne yaptığını kısaca açıkla"   # → AI review tetiklenir
-git push                                       # → AI deeper review tetiklenir
+git commit -m "short description"   # → triggers AI review
+git push                             # → triggers deeper AI review
 
-# Güncel kodu çek
+# Pull latest
 git pull
 ```
 
-API key'in yoksa hook'ları `--no-verify` ile geç (sadece kendi oturumunda).
+If you don't have an API key, skip the hooks with `--no-verify` (only in your own session).
