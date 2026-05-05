@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Test Cihaz — XY + Sliders</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <style>
+      :root {
+        --bg: #0c0d10;
+        --panel: #16181d;
+        --border: #2a2d35;
+        --accent: #5cf;
+        --text: #e6e8ec;
+        --muted: #7a8090;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        padding: 16px;
+        gap: 16px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 13px;
+      }
+      header .name { font-size: 16px; font-weight: 600; }
+      header .status { color: var(--muted); }
+      header .status.ok { color: var(--accent); }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 200px;
+        gap: 16px;
+        flex: 1;
+        min-height: 0;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+      }
+      .panel-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      /* XY pad */
+      #xypad {
+        position: relative;
+        flex: 1;
+        background:
+          linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 25% 25%,
+          linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 25% 25%,
+          #0a0b0e;
+        border-radius: 6px;
+        cursor: crosshair;
+        touch-action: none;
+        overflow: hidden;
+      }
+      #xypad .crosshair-h, #xypad .crosshair-v {
+        position: absolute;
+        background: var(--accent);
+        opacity: 0.4;
+      }
+      #xypad .crosshair-h { left: 0; right: 0; height: 1px; }
+      #xypad .crosshair-v { top: 0; bottom: 0; width: 1px; }
+      #xypad .dot {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 16px var(--accent);
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+      #xypad .label {
+        position: absolute;
+        bottom: 6px;
+        right: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      /* Sliders */
+      .sliders {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .slider-block { display: flex; flex-direction: column; flex: 1; }
+      .slider-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+      .slider-label .v { color: var(--accent); font-variant-numeric: tabular-nums; }
+      .vert-slider {
+        position: relative;
+        flex: 1;
+        background: #0a0b0e;
+        border-radius: 6px;
+        overflow: hidden;
+        touch-action: none;
+        cursor: ns-resize;
+      }
+      .vert-slider .fill {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        background: linear-gradient(180deg, rgba(85,204,255,0.6), rgba(85,204,255,0.2));
+        border-top: 2px solid var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="name" id="device-name">Test Cihaz</div>
+      <div class="status" id="status">bağlanılıyor…</div>
+    </header>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="panel-title">XY Pad &nbsp;·&nbsp; <code>/xy/x</code> · <code>/xy/y</code></div>
+        <div id="xypad">
+          <div class="crosshair-h" id="xy-h"></div>
+          <div class="crosshair-v" id="xy-v"></div>
+          <div class="dot" id="xy-dot"></div>
+          <div class="label" id="xy-label">x=0.50  y=0.50</div>
+        </div>
+      </div>
+
+      <div class="panel sliders">
+        <div class="panel-title">Sliders</div>
+        <div class="slider-block">
+          <div class="slider-label"><span><code>/slider1</code></span><span class="v" id="s1-v">0.00</span></div>
+          <div class="vert-slider" data-path="/slider1"><div class="fill" id="s1-fill" style="height:0%"></div></div>
+        </div>
+        <div class="slider-block">
+          <div class="slider-label"><span><code>/slider2</code></span><span class="v" id="s2-v">0.00</span></div>
+          <div class="vert-slider" data-path="/slider2"><div class="fill" id="s2-fill" style="height:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${location.host}`);
+      const statusEl = document.getElementById('status');
+
+      const state = { '/xy/x': 0.5, '/xy/y': 0.5, '/slider1': 0, '/slider2': 0 };
+
+      function fmt(v) { return v.toFixed(2); }
+
+      function applyUI(path, value) {
+        state[path] = value;
+        if (path === '/xy/x' || path === '/xy/y') {
+          const x = state['/xy/x'], y = state['/xy/y'];
+          const pad = document.getElementById('xypad');
+          const r = pad.getBoundingClientRect();
+          const dot = document.getElementById('xy-dot');
+          dot.style.left = (x * r.width) + 'px';
+          dot.style.top  = ((1 - y) * r.height) + 'px';
+          document.getElementById('xy-h').style.top  = ((1 - y) * r.height) + 'px';
+          document.getElementById('xy-v').style.left = (x * r.width) + 'px';
+          document.getElementById('xy-label').textContent = `x=${fmt(x)}  y=${fmt(y)}`;
+        }
+        if (path === '/slider1') {
+          document.getElementById('s1-fill').style.height = (value * 100) + '%';
+          document.getElementById('s1-v').textContent = fmt(value);
+        }
+        if (path === '/slider2') {
+          document.getElementById('s2-fill').style.height = (value * 100) + '%';
+          document.getElementById('s2-v').textContent = fmt(value);
+        }
+      }
+
+      function send(path, value) {
+        applyUI(path, value);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'SET', path, value }));
+        }
+      }
+
+      ws.addEventListener('open', () => { statusEl.textContent = 'bağlı'; statusEl.classList.add('ok'); });
+      ws.addEventListener('close', () => { statusEl.textContent = 'bağlantı koptu'; statusEl.classList.remove('ok'); });
+      ws.addEventListener('message', (ev) => {
+        let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+        if (msg.type === 'INITIAL_STATE' && msg.values) {
+          for (const [p, v] of Object.entries(msg.values)) applyUI(p, v);
+        }
+        if (msg.type === 'UI_UPDATE') applyUI(msg.path, msg.value);
+      });
+
+      // ============ XY pad input ============
+      const pad = document.getElementById('xypad');
+      let xyDragging = false;
+      function xyHandle(ev) {
+        const r = pad.getBoundingClientRect();
+        const ev2 = ev.touches ? ev.touches[0] : ev;
+        const x = Math.max(0, Math.min(1, (ev2.clientX - r.left) / r.width));
+        const y = Math.max(0, Math.min(1, 1 - (ev2.clientY - r.top) / r.height));
+        send('/xy/x', x);
+        send('/xy/y', y);
+      }
+      pad.addEventListener('pointerdown', (e) => { xyDragging = true; pad.setPointerCapture(e.pointerId); xyHandle(e); });
+      pad.addEventListener('pointermove', (e) => { if (xyDragging) xyHandle(e); });
+      pad.addEventListener('pointerup',   (e) => { xyDragging = false; try { pad.releasePointerCapture(e.pointerId); } catch {} });
+
+      // ============ Sliders ============
+      document.querySelectorAll('.vert-slider').forEach((el) => {
+        const path = el.dataset.path;
+        let dragging = false;
+        function handle(ev) {
+          const r = el.getBoundingClientRect();
+          const ev2 = ev.touches ? ev.touches[0] : ev;
+          const v = Math.max(0, Math.min(1, 1 - (ev2.clientY - r.top) / r.height));
+          send(path, v);
+        }
+        el.addEventListener('pointerdown', (e) => { dragging = true; el.setPointerCapture(e.pointerId); handle(e); });
+        el.addEventListener('pointermove', (e) => { if (dragging) handle(e); });
+        el.addEventListener('pointerup',   (e) => { dragging = false; try { el.releasePointerCapture(e.pointerId); } catch {} });
+      });
+
+      // İlk render — pad boyutu hesaplandıktan sonra
+      requestAnimationFrame(() => {
+        applyUI('/xy/x', state['/xy/x']);
+        applyUI('/xy/y', state['/xy/y']);
+      });
+      window.addEventListener('resize', () => applyUI('/xy/x', state['/xy/x']));
+    </script>
+  </body>
+</html>

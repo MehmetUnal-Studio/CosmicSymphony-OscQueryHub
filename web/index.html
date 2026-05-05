@@ -1,575 +1,966 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OSCQuery Hub</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+* {
+  transition:
+    background-color 180ms cubic-bezier(.4,0,.2,1),
+    border-color     180ms cubic-bezier(.4,0,.2,1),
+    color            180ms cubic-bezier(.4,0,.2,1),
+    box-shadow       180ms cubic-bezier(.4,0,.2,1),
+    transform        180ms cubic-bezier(.4,0,.2,1);
+}
+
 :root {
-  --bg:          #04070f;
-  --bg-2:        #080d1a;
-  --bg-3:        #0d1425;
-  --surface:     rgba(255,255,255,0.035);
-  --surface-2:   rgba(255,255,255,0.06);
-  --border:      rgba(255,255,255,0.07);
-  --border-2:    rgba(255,255,255,0.12);
-  --ink:         #e2e8f5;
-  --ink-dim:     #4a5568;
-  --ink-mid:     #8892a4;
+  --bg:        #03030a;
+  --bg-2:      #07070f;
+  --bg-3:      #0d0d1a;
+  --surface:   rgba(255,255,255,0.025);
+  --surface-2: rgba(255,255,255,0.05);
+  --border:    rgba(255,255,255,0.055);
+  --border-2:  rgba(255,255,255,0.11);
 
-  --accent:      #6366f1;
-  --accent-glow: rgba(99,102,241,0.3);
-  --pink:        #ec4899;
-  --cyan:        #06b6d4;
-  --cyan-glow:   rgba(6,182,212,0.25);
+  --ink:       #dde0ee;
+  --ink-dim:   #2e3040;
+  --ink-mid:   #636578;
 
-  --green:       #10b981;
-  --green-glow:  rgba(16,185,129,0.3);
-  --yellow:      #f59e0b;
-  --yellow-glow: rgba(245,158,11,0.25);
-  --red:         #ef4444;
-  --red-glow:    rgba(239,68,68,0.3);
-  --orange:      #f97316;
+  --signal:     #00f5d4;
+  --signal-rgb: 0,245,212;
+  --hot:        #ff5e3a;
+  --hot-rgb:    255,94,58;
+  --violet:     #9b5de5;
+  --violet-rgb: 155,93,229;
 
-  --radius:      12px;
-  --radius-sm:   8px;
-  --mono:        'JetBrains Mono', ui-monospace, monospace;
-  --sans:        'Inter', system-ui, sans-serif;
+  --connected:  #00e8aa;
+  --connecting: #ffb238;
+  --lost:       #ff2d55;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --display:   var(--font-sans);
+  --mono:      var(--font-mono);
+  --radius:    3px;
 }
 
 html, body {
   height: 100%;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--sans);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01","cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   font-size: 14px;
   line-height: 1.5;
   overflow-x: hidden;
 }
 
-body {
-  background-image:
-    radial-gradient(ellipse 80% 50% at 10% 0%,   rgba(99,102,241,0.08) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 90% 100%,  rgba(236,72,153,0.06) 0%, transparent 50%),
-    radial-gradient(ellipse 40% 60% at 50% 50%,   rgba(6,182,212,0.03) 0%, transparent 70%);
+/* ─── SCROLLBAR ──────────────────────────────────── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,245,212,0.15); border-radius: 2px; }
+
+/* ─── APP LAYER ──────────────────────────────────── */
+.app {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ─── SCROLLBAR ─────────────────────────────────────────── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
-
-/* ─── LAYOUT ─────────────────────────────────────────────── */
-.app { min-height: 100vh; display: flex; flex-direction: column; }
-
+/* ─── TOPBAR ─────────────────────────────────────── */
 .topbar {
   position: sticky; top: 0; z-index: 100;
+  height: 52px;
+  background: rgba(3,3,10,0.88);
   backdrop-filter: blur(20px) saturate(180%);
-  background: rgba(4,7,15,0.85);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(0,245,212,0.08);
   padding: 0 2rem;
-  height: 60px;
   display: flex; align-items: center; gap: 1.5rem;
 }
 
-.logo {
-  display: flex; align-items: center; gap: 0.75rem;
-  font-size: 1rem; font-weight: 600; letter-spacing: -0.02em;
-  white-space: nowrap;
+.topbar::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,245,212,0.3), transparent);
 }
+
+.logo {
+  display: flex; align-items: center; gap: 0.65rem;
+  font-family: var(--display);
+  font-size: 0.65rem; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap; color: var(--ink);
+}
+
 .logo-icon {
-  width: 32px; height: 32px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--pink));
+  width: 28px; height: 28px;
+  border: 1px solid rgba(0,245,212,0.4);
+  border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 0.8rem; box-shadow: 0 0 16px var(--accent-glow);
+  font-size: 0.7rem; color: var(--signal);
+  box-shadow: 0 0 12px rgba(0,245,212,0.2), inset 0 0 8px rgba(0,245,212,0.05);
+  animation: logo-breathe 3s ease-in-out infinite;
   flex-shrink: 0;
 }
-.logo-text { color: var(--ink); }
-.logo-text span { color: var(--accent); }
+
+@keyframes logo-breathe {
+  0%,100% { box-shadow: 0 0 8px rgba(0,245,212,0.2), inset 0 0 4px rgba(0,245,212,0.05); }
+  50%     { box-shadow: 0 0 18px rgba(0,245,212,0.4), inset 0 0 10px rgba(0,245,212,0.1); }
+}
+
+.logo-sub { color: rgba(0,245,212,0.7); font-weight: 400; }
 
 .topbar-spacer { flex: 1; }
 
 .ws-badge {
   display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.3rem 0.75rem;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 20px; font-size: 0.72rem;
-  color: var(--ink-mid); letter-spacing: 0.05em;
+  padding: 0.3rem 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-family: var(--mono); font-size: 0.65rem;
+  color: var(--ink-mid); letter-spacing: 0.08em;
   transition: all 0.3s;
 }
 .ws-badge .dot {
   width: 6px; height: 6px; border-radius: 50%;
-  background: var(--ink-dim); transition: all 0.3s;
-  flex-shrink: 0;
+  background: var(--ink-dim); transition: all 0.3s; flex-shrink: 0;
 }
-.ws-badge.connected { color: var(--green); border-color: rgba(16,185,129,0.3); }
+.ws-badge.connected { color: var(--signal); border-color: rgba(0,245,212,0.25); }
 .ws-badge.connected .dot {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green), 0 0 12px var(--green-glow);
+  background: var(--signal);
+  box-shadow: 0 0 6px var(--signal), 0 0 12px rgba(0,245,212,0.4);
   animation: breathe 2s ease-in-out infinite;
 }
-@keyframes breathe { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+@keyframes breathe { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
-.main { flex: 1; padding: 1.5rem 2rem 2rem; max-width: 1600px; width: 100%; margin: 0 auto; }
-
-/* ─── STATS ROW ──────────────────────────────────────────── */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-.stat-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 1rem 1.25rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  position: relative; overflow: hidden;
-}
-.stat-card::before {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(135deg, rgba(99,102,241,0.04), transparent);
-  opacity: 0; transition: opacity 0.3s;
-}
-.stat-card:hover::before { opacity: 1; }
-.stat-card:hover { border-color: var(--border-2); }
-.stat-num {
-  font-size: 2rem; font-weight: 600; letter-spacing: -0.03em;
-  background: linear-gradient(135deg, var(--accent), var(--cyan));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text; line-height: 1;
-  font-family: var(--mono);
-}
-.stat-label {
-  font-size: 0.65rem; color: var(--ink-dim);
-  text-transform: uppercase; letter-spacing: 0.12em;
-  margin-top: 0.35rem; font-weight: 500;
+/* ─── MAIN ───────────────────────────────────────── */
+.main {
+  flex: 1;
+  padding: 1.5rem 2rem 3rem;
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
 }
 
-/* ─── ABLETON BANNER ──────────────────────────────────────── */
-.ableton-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 0.875rem 1.25rem; margin-bottom: 1.5rem;
-  background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(236,72,153,0.05));
-  border: 1px solid rgba(99,102,241,0.2); border-radius: var(--radius);
-  position: relative; overflow: hidden;
+/* ─── HUD STATS BAR ──────────────────────────────── */
+.hud-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 1.25rem;
+  border: 1px solid rgba(0,245,212,0.1);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: rgba(0,245,212,0.02);
 }
-.ableton-banner::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-  width: 3px; background: linear-gradient(to bottom, var(--accent), var(--pink));
-  border-radius: 3px 0 0 3px;
-}
-.ableton-banner-left { display: flex; align-items: center; gap: 0.75rem; }
-.ableton-banner-icon {
-  width: 28px; height: 28px; border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent), var(--pink));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 0.7rem; flex-shrink: 0;
-}
-.ableton-banner-text { font-size: 0.82rem; color: var(--ink-mid); }
-.ableton-banner-text strong { color: var(--ink); font-weight: 500; }
-code {
-  font-family: var(--mono); font-size: 0.78em;
-  background: rgba(255,255,255,0.07); padding: 0.1em 0.4em;
-  border-radius: 4px; color: var(--cyan);
-}
-.ableton-count {
-  font-family: var(--mono); font-size: 1.1rem; font-weight: 500;
-  color: var(--accent); text-align: right; white-space: nowrap;
-}
-.ableton-count-label { font-size: 0.65rem; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.1em; }
 
-/* ─── SECTION HEADER ─────────────────────────────────────── */
-.section-header {
+.hud-cell {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border-right: 1px solid rgba(0,245,212,0.07);
+  position: relative;
+}
+.hud-cell:last-child { border-right: none; }
+
+.hud-cell::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,245,212,0.25), transparent);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.hud-cell:hover::before { opacity: 1; }
+
+.hud-num {
+  font-family: var(--font-mono);
+  font-size: 2.5rem; font-weight: 600;
+  color: var(--signal);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 20px rgba(0,245,212,0.4);
+}
+
+.hud-label {
+  font-family: var(--font-sans);
+  font-size: 10px; font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-top: 0.35rem;
+}
+
+/* ─── SIGNAL BANNER (Ableton) ────────────────────── */
+.signal-banner {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 1rem; gap: 1rem;
-}
-.section-title {
-  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.15em; color: var(--ink-mid);
-  display: flex; align-items: center; gap: 0.5rem;
-}
-.section-title::before {
-  content: ''; width: 3px; height: 14px; border-radius: 2px;
-  background: linear-gradient(to bottom, var(--accent), var(--pink));
-}
-.section-hint { font-size: 0.68rem; color: var(--ink-dim); }
-
-/* ─── DEVICE GRID ────────────────────────────────────────── */
-.devices-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 0.875rem;
-  margin-bottom: 2rem;
-}
-
-.device-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 1.1rem;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border: 1px solid rgba(255,94,58,0.15);
+  border-left: 2px solid var(--hot);
+  border-radius: var(--radius);
   position: relative; overflow: hidden;
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.15s;
-  cursor: default;
 }
-.device-card::after {
-  content: ''; position: absolute; inset: 0; border-radius: var(--radius);
-  background: linear-gradient(135deg, rgba(255,255,255,0.03), transparent 60%);
+
+.signal-banner::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(255,94,58,0.04), transparent 40%);
   pointer-events: none;
 }
-.device-card:hover { transform: translateY(-1px); border-color: var(--border-2); }
-.device-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
 
-.device-card.connected {
-  border-color: rgba(16,185,129,0.35);
-  box-shadow: 0 0 0 1px rgba(16,185,129,0.1), 0 4px 20px rgba(0,0,0,0.2);
+.signal-banner-left {
+  display: flex; align-items: center; gap: 0.75rem;
 }
-.device-card.connecting { border-color: rgba(245,158,11,0.35); }
-.device-card.lost       { border-color: rgba(239,68,68,0.35); }
-.device-card.disabled   { opacity: 0.5; }
-.device-card.flash      { background: rgba(99,102,241,0.06); }
-.device-card.saving     { border-color: rgba(245,158,11,0.4); }
-.device-card.saved      { border-color: rgba(16,185,129,0.4); }
 
-/* Status glow bar at top */
-.device-card::before {
-  content: ''; position: absolute; top: 0; left: 1rem; right: 1rem; height: 1px;
-  opacity: 0; transition: opacity 0.3s;
+.signal-icon {
+  font-size: 0.8rem; color: var(--hot);
+  text-shadow: 0 0 10px rgba(255,94,58,0.6);
+  flex-shrink: 0;
 }
-.device-card.connected::before  { background: linear-gradient(90deg, transparent, var(--green), transparent); opacity: 1; }
-.device-card.connecting::before { background: linear-gradient(90deg, transparent, var(--yellow), transparent); opacity: 1; }
-.device-card.lost::before       { background: linear-gradient(90deg, transparent, var(--red), transparent); opacity: 1; }
 
-.device-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  margin-bottom: 0.75rem;
+.signal-text {
+  font-size: 0.72rem; color: var(--ink-mid);
+  font-family: var(--mono);
 }
-.device-id-badge {
-  font-family: var(--mono); font-size: 0.6rem; color: var(--ink-dim);
-  background: var(--surface-2); border: 1px solid var(--border);
-  padding: 0.15rem 0.5rem; border-radius: 4px; letter-spacing: 0.05em;
+.signal-text strong { color: var(--ink); font-weight: 400; }
+
+code {
+  font-family: var(--mono); font-size: 0.78em;
+  background: rgba(255,94,58,0.08); padding: 0.1em 0.4em;
+  border-radius: 2px; color: var(--hot);
 }
-.device-status-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--ink-dim); flex-shrink: 0;
+
+.signal-count {
+  font-family: var(--display);
+  font-size: 1.1rem; font-weight: 700;
+  color: var(--hot);
+  text-shadow: 0 0 15px rgba(255,94,58,0.4);
+  white-space: nowrap;
+}
+.signal-count-label {
+  font-size: 0.5rem; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: 0.15em;
+  font-family: var(--display);
+  text-align: right;
+}
+
+/* ─── SECTION HEADER ─────────────────────────────── */
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.875rem; gap: 1rem;
+}
+.section-title {
+  font-family: var(--display);
+  font-size: 0.55rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.25em;
+  color: var(--ink-mid);
+  display: flex; align-items: center; gap: 0.6rem;
+}
+.section-title::before {
+  content: '';
+  width: 16px; height: 1px;
+  background: linear-gradient(90deg, var(--signal), transparent);
+}
+.section-hint {
+  font-size: 0.62rem; color: var(--ink-dim);
+  font-family: var(--mono);
+}
+
+/* ─── DEVICES GRID ───────────────────────────────── */
+.devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+/* ─── NODE CARD ──────────────────────────────────── */
+.node-card {
+  background: rgba(3,4,15,0.82);
+  backdrop-filter: blur(28px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.055);
+  border-top: 2px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.03) inset,
+    0 20px 50px rgba(0,0,0,0.5),
+    0 2px 8px rgba(0,0,0,0.4);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.18s, box-shadow 0.18s;
+  cursor: default;
+}
+
+.node-card::before {
+  content: '';
+  position: absolute; top: -60px; left: -10%; right: -10%;
+  height: 100px;
+  background: radial-gradient(ellipse 60% 50% at 50% 100%, var(--_status, rgba(0,245,212,0)), transparent);
+  pointer-events: none;
+  transition: opacity 0.4s;
+  opacity: 0;
+}
+
+/* Scanline texture */
+.node-card::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(0,0,0,0.08) 3px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.node-card > * { position: relative; z-index: 1; }
+
+.node-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.03) inset,
+    0 30px 60px rgba(0,0,0,0.6),
+    0 4px 16px rgba(0,0,0,0.4);
+}
+
+.node-card.connected {
+  border-top-color: var(--connected);
+  --_status: rgba(0,232,170,0.12);
+}
+.node-card.connected::before { opacity: 1; }
+
+.node-card.connecting {
+  border-top-color: var(--connecting);
+  --_status: rgba(255,178,56,0.1);
+}
+.node-card.connecting::before { opacity: 1; animation: connecting-pulse 1.5s ease-in-out infinite; }
+@keyframes connecting-pulse { 0%,100%{opacity:0.4;} 50%{opacity:1;} }
+
+.node-card.lost {
+  border-top-color: var(--lost);
+  --_status: rgba(255,45,85,0.1);
+}
+.node-card.lost::before { opacity: 1; }
+
+.node-card.disabled {
+  background: linear-gradient(180deg, #161b22 0%, #11151b 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-top: 2px solid rgba(255,255,255,0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.02),
+    0 20px 50px rgba(0,0,0,0.5),
+    0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* Brightened text on offline cards */
+.node-card.disabled .card-name      { color: rgba(255,255,255,0.82); }
+.node-card.disabled .card-type      { color: rgba(255,255,255,0.55); opacity: 1; }
+.node-card.disabled .card-id        { color: rgba(255,255,255,0.55); }
+.node-card.disabled .addr-host,
+.node-card.disabled .addr-port      { color: rgba(255,255,255,0.72); }
+.node-card.disabled .addr-icon,
+.node-card.disabled .addr-sep       { color: rgba(255,255,255,0.40); }
+.node-card.disabled .metric-key     { color: rgba(255,255,255,0.55); }
+.node-card.disabled .metric-val     { color: rgba(255,255,255,0.30); }
+.node-card.disabled .metric         { background: #1c2128; border-color: rgba(255,255,255,0.05); }
+
+/* OFFLINE status badge (the "OFFLINE" pill) */
+.node-card.disabled .status-dot-wrap {
+  background: rgba(239,68,68,0.14);
+  border: 1px solid rgba(239,68,68,0.30);
+  border-radius: 3px;
+  padding: 2px 7px;
+}
+.node-card.disabled .status-dot     { background: #f87171; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+.node-card.disabled .status-text    { color: #f87171; font-weight: 600; }
+
+/* Enable button — must look clickable on offline cards */
+.node-card.disabled .sig-btn.enabled-btn {
+  background: rgba(34,211,238,0.10);
+  color: #67e8f9;
+  border: 1px solid rgba(34,211,238,0.40);
+}
+.node-card.disabled .sig-btn.enabled-btn:hover {
+  background: rgba(34,211,238,0.20);
+  border-color: rgba(34,211,238,0.70);
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.15);
+}
+
+/* Reconnect button on offline cards (disabled state) */
+.node-card.disabled .sig-btn[data-action="reconnect"] {
+  color: rgba(255,255,255,0.50);
+  border: 1px solid rgba(255,255,255,0.10);
+  cursor: not-allowed;
+}
+
+/* Offline card hover — subtle lift */
+.node-card.disabled:hover {
+  border-color: rgba(34,211,238,0.25);
+  transform: translateY(-1px);
+}
+
+.node-card.flash {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.03) inset,
+    0 20px 50px rgba(0,0,0,0.5),
+    0 0 0 1px rgba(0,245,212,0.2),
+    0 0 24px rgba(0,245,212,0.08);
+}
+
+.node-card.saving { border-top-color: var(--connecting); }
+.node-card.saved  { border-top-color: var(--connected); }
+
+/* ─── CARD INNER ─────────────────────────────────── */
+.card-inner { padding: 14px 16px 14px; }
+
+/* ─── CARD HEAD ──────────────────────────────────── */
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 12px;
+}
+
+.card-name {
+  font-family: var(--font-sans);
+  font-size: 14px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink); line-height: 1.2;
+}
+
+.card-type {
+  font-family: var(--font-sans);
+  font-size: 11px; font-weight: 500;
+  color: var(--ink-mid);
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+  opacity: 0.6;
+}
+
+.card-status-block {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  flex-shrink: 0;
+}
+
+.card-id {
+  font-family: var(--mono); font-size: 0.82rem;
+  color: rgba(0,245,212,0.55);
+  letter-spacing: 0.08em;
+}
+
+.status-dot-wrap {
+  display: flex; align-items: center; gap: 5px;
+}
+
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-dim);
   transition: background 0.3s, box-shadow 0.3s;
+  flex-shrink: 0;
+}
+.node-card.connected  .status-dot { background: var(--connected);  box-shadow: 0 0 6px var(--connected), 0 0 12px rgba(0,232,170,0.4); }
+.node-card.connecting .status-dot { background: var(--connecting); animation: dot-blink 1s ease-in-out infinite; }
+.node-card.lost       .status-dot { background: var(--lost);       box-shadow: 0 0 6px var(--lost); }
+@keyframes dot-blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+
+.status-text {
+  font-size: 0.78rem; color: var(--ink-mid);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  font-family: var(--mono);
+}
+.node-card.connected  .status-text { color: var(--connected); }
+.node-card.lost       .status-text { color: var(--lost); }
+.node-card.connecting .status-text { color: var(--connecting); }
+
+/* ─── ADDR BAR ───────────────────────────────────── */
+.card-addr {
+  display: flex; align-items: center; gap: 0;
+  background: rgba(0,245,212,0.03);
+  border: 1px solid rgba(0,245,212,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.addr-icon {
+  padding: 5px 7px;
+  color: rgba(0,245,212,0.35);
+  border-right: 1px solid rgba(0,245,212,0.07);
+  font-size: 0.65rem;
+  flex-shrink: 0;
+  background: rgba(0,245,212,0.03);
+}
+
+.addr-host {
+  padding: 5px 8px;
+  color: var(--ink);
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.addr-sep {
+  padding: 5px 3px; color: var(--ink-dim);
+  border-left: 1px solid rgba(255,255,255,0.05);
+  border-right: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0,0,0,0.15);
+  font-size: 0.65rem; flex-shrink: 0;
+}
+
+.addr-port {
+  padding: 5px 9px;
+  color: var(--signal);
+  flex-shrink: 0; font-weight: 500;
+}
+
+/* ─── EDITABLE ───────────────────────────────────── */
+.node-card .editable {
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: text;
+  transition: all 0.1s;
+  display: inline;
+  padding: 1px 2px; margin: -1px -2px;
+}
+.node-card .editable:hover { border-color: rgba(0,245,212,0.25); background: rgba(0,245,212,0.04); }
+.node-card .editable:focus { outline: none; border-color: rgba(0,245,212,0.5); background: rgba(0,245,212,0.07); }
+.node-card .editable.error { border-color: rgba(255,45,85,0.6); color: var(--lost); }
+
+/* ─── METRICS ROW ────────────────────────────────── */
+.card-metrics {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px; margin-bottom: 10px;
+}
+
+.metric {
+  background: rgba(255,255,255,0.018);
+  border: 1px solid rgba(255,255,255,0.045);
+  border-radius: 2px; padding: 7px 8px;
+}
+
+.metric-val {
+  font-family: var(--font-mono);
+  font-size: 1.3rem; font-weight: 600;
+  color: var(--ink); line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-key {
+  font-family: var(--font-sans);
+  font-size: 10px; font-weight: 500;
+  color: var(--ink-mid);
+  text-transform: uppercase; letter-spacing: 0.1em;
   margin-top: 4px;
 }
-.connected  .device-status-dot { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
-.connecting .device-status-dot { background: var(--yellow); animation: pulse-dot 1.2s ease-in-out infinite; }
-.lost       .device-status-dot { background: var(--red); box-shadow: 0 0 6px var(--red-glow); }
-@keyframes pulse-dot { 0%,100%{opacity:1; box-shadow:0 0 8px var(--yellow-glow);} 50%{opacity:0.3; box-shadow:none;} }
 
-.device-name-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; }
-.device-name {
-  font-size: 0.95rem; font-weight: 500; color: var(--ink);
-  min-width: 0; flex: 1;
-}
-.device-type {
-  font-size: 0.65rem; color: var(--ink-dim);
-  text-transform: uppercase; letter-spacing: 0.1em;
-  margin-bottom: 0.75rem; font-family: var(--mono);
+.metric-wave { padding: 7px 7px 4px; }
+
+/* ─── SINE WAVE CANVAS ───────────────────────────── */
+.wave-cvs {
+  display: block;
+  width: 100%;
+  height: 22px;
+  border-radius: 1px;
+  margin-bottom: 2px;
 }
 
-/* ─── EDITABLE FIELDS ────────────────────────────────────── */
-.editable {
-  font-family: var(--mono); font-size: 0.78rem; color: var(--cyan);
-  border: 1px dashed transparent; padding: 0.2rem 0.35rem;
-  margin: -0.2rem -0.35rem; cursor: text;
-  transition: all 0.15s; border-radius: 5px;
-  display: inline-block; min-width: 60px;
-}
-.editable:hover { border-color: var(--border-2); background: var(--surface-2); }
-.editable:focus { outline: none; border-color: var(--accent); background: rgba(99,102,241,0.08); color: var(--ink); }
-.editable.error { border-color: var(--red); color: var(--red); }
-
-.device-host-row {
-  display: flex; align-items: center; gap: 0.4rem;
-  padding: 0.6rem 0.75rem; margin: 0 -0.25rem 0.75rem;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); font-size: 0.78rem;
-}
-.host-label {
-  font-size: 0.6rem; color: var(--ink-dim); text-transform: uppercase;
-  letter-spacing: 0.12em; font-weight: 500; flex-shrink: 0;
-}
-.host-sep { color: var(--ink-dim); flex-shrink: 0; }
-
-.device-footer {
-  border-top: 1px solid var(--border);
-  padding-top: 0.75rem; margin-top: 0.25rem;
-}
-.device-status-row {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 0.75rem;
-}
-.device-status-text {
-  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em;
-  color: var(--ink-dim); font-family: var(--mono);
-}
-.device-status-text.connected  { color: var(--green); }
-.device-status-text.lost       { color: var(--red); }
-.device-status-text.connecting { color: var(--yellow); }
-.device-msgs {
-  font-family: var(--mono); font-size: 0.68rem; color: var(--accent);
-  background: rgba(99,102,241,0.12); padding: 0.1rem 0.4rem;
-  border-radius: 4px; display: none;
+/* ─── M4L STRIP ──────────────────────────────────── */
+.m4l-strip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; margin-bottom: 10px;
+  background: rgba(255,94,58,0.04);
+  border: 1px solid rgba(255,94,58,0.1);
+  border-radius: 2px;
+  min-height: 24px;
+  font-family: var(--mono);
 }
 
-/* ─── BUTTONS ────────────────────────────────────────────── */
-.device-actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
-
-.btn {
-  flex: 1; padding: 0.5rem 0.75rem;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--ink-mid);
-  font-family: var(--sans); font-size: 0.72rem; font-weight: 500;
-  letter-spacing: 0.04em; cursor: pointer;
-  transition: all 0.15s; white-space: nowrap;
-  display: flex; align-items: center; justify-content: center; gap: 0.35rem;
+.m4l-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(255,94,58,0.3); flex-shrink: 0;
+  transition: background 0.1s, box-shadow 0.1s;
 }
-.btn:hover { border-color: var(--border-2); color: var(--ink); background: var(--surface-2); }
-.btn:active { transform: scale(0.98); }
-.btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-.btn.primary {
-  background: linear-gradient(135deg, var(--accent), rgba(99,102,241,0.8));
-  border-color: rgba(99,102,241,0.5); color: #fff; font-weight: 600;
-  box-shadow: 0 2px 12px rgba(99,102,241,0.25);
+.m4l-dot.active {
+  background: var(--hot);
+  box-shadow: 0 0 8px var(--hot), 0 0 16px rgba(255,94,58,0.4);
+  animation: m4l-burst 0.5s ease-out;
 }
-.btn.primary:hover { box-shadow: 0 2px 20px rgba(99,102,241,0.4); }
-
-.btn-icon { font-size: 0.8rem; }
-
-.save-hint {
-  font-size: 0.65rem; text-align: right; height: 14px;
-  color: var(--ink-dim); font-family: var(--mono);
-  letter-spacing: 0.05em; transition: color 0.2s;
+@keyframes m4l-burst {
+  0%   { box-shadow: 0 0 20px var(--hot), 0 0 40px rgba(255,94,58,0.6); }
+  100% { box-shadow: 0 0 6px var(--hot); }
 }
-.save-hint.ok  { color: var(--green); }
-.save-hint.err { color: var(--red); }
 
-/* ─── PARAMS PANEL ───────────────────────────────────────── */
-.params-toggle-btn {
-  width: 100%; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--ink-dim);
-  padding: 0.45rem 0.75rem; cursor: pointer;
-  font-family: var(--sans); font-size: 0.7rem; font-weight: 500;
-  letter-spacing: 0.05em; transition: all 0.15s;
+.m4l-label {
+  font-size: 0.75rem; letter-spacing: 0.12em;
+  color: rgba(255,94,58,0.45);
+  text-transform: uppercase; flex-shrink: 0;
+}
+.m4l-label.active { color: var(--hot); }
+
+.m4l-path {
+  font-size: 0.82rem; color: var(--ink-mid); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+.m4l-val {
+  font-size: 0.92rem; color: var(--hot);
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* ─── PARAMS ─────────────────────────────────────── */
+.device-params-bar { margin-bottom: 10px; }
+
+.params-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(0,245,212,0.08);
+  border-radius: 2px; padding: 6px 8px;
+  cursor: pointer;
+  font-family: var(--display); font-size: 0.72rem;
+  font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-mid);
   display: flex; justify-content: space-between; align-items: center;
+  transition: all 0.12s;
 }
-.params-toggle-btn:hover { border-color: var(--border-2); color: var(--ink); }
-.params-toggle-btn.open { border-color: rgba(6,182,212,0.35); color: var(--cyan); }
+.params-btn:hover { border-color: rgba(0,245,212,0.2); color: var(--ink); background: rgba(0,245,212,0.03); }
+.params-btn.open  { border-color: rgba(0,245,212,0.25); color: var(--signal); background: rgba(0,245,212,0.04); }
 
-.params-count-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 18px; padding: 0 5px;
-  background: rgba(6,182,212,0.12); border: 1px solid rgba(6,182,212,0.2);
-  border-radius: 9px; font-family: var(--mono); font-size: 0.68rem;
-  color: var(--cyan); font-weight: 500;
+.param-count {
+  background: rgba(0,245,212,0.08);
+  border: 1px solid rgba(0,245,212,0.15);
+  border-radius: 10px; padding: 1px 6px;
+  font-family: var(--mono); font-size: 0.6rem;
+  color: rgba(0,245,212,0.7); font-weight: 400;
 }
-.params-toggle-btn.open .params-count-badge {
-  background: rgba(6,182,212,0.2); border-color: rgba(6,182,212,0.4);
-}
+.params-btn.open .param-count { background: rgba(0,245,212,0.14); color: var(--signal); }
 
 .device-params-list {
   display: none; flex-direction: column;
-  max-height: 180px; overflow-y: auto;
-  margin-top: 0.4rem;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: rgba(4,7,15,0.6); backdrop-filter: blur(10px);
+  margin-top: 3px; max-height: 160px; overflow-y: auto;
+  border: 1px solid rgba(0,245,212,0.08);
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+  background: rgba(0,3,15,0.7);
 }
 .device-params-list.open { display: flex; }
 
 .device-param-row {
-  display: grid; grid-template-columns: 1fr 28px 80px;
-  gap: 0.5rem; padding: 0.3rem 0.65rem;
-  font-size: 0.65rem; border-bottom: 1px solid var(--border);
-  align-items: center; transition: background 0.08s;
+  display: grid; grid-template-columns: 1fr 22px 72px;
+  gap: 4px; padding: 3px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-family: var(--mono); font-size: 0.6rem; align-items: center;
 }
 .device-param-row:last-child { border-bottom: none; }
-.device-param-row.flash { background: rgba(99,102,241,0.08); }
+.device-param-row.flash { background: rgba(0,245,212,0.05); }
+.dp-path  { color: var(--ink-mid); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; }
+.dp-type  { text-align: center; color: var(--ink-mid); font-size: 0.62rem; border: 1px solid rgba(255,255,255,0.06); border-radius: 2px; padding: 1px 3px; }
+.dp-value { text-align: right; color: var(--signal); font-variant-numeric: tabular-nums; font-size: 0.72rem; }
 
-.dp-path {
-  font-family: var(--mono); color: var(--ink-mid);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.dp-type {
-  font-family: var(--mono); font-size: 0.6rem; text-align: center;
-  color: var(--ink-dim); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 3px; padding: 0.1rem;
-}
-.dp-value {
-  font-family: var(--mono); color: var(--cyan); text-align: right;
-  font-variant-numeric: tabular-nums;
+/* ─── ACTION BUTTONS ─────────────────────────────── */
+.card-actions {
+  display: flex; gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.05);
 }
 
-/* ─── M4L STRIP ──────────────────────────────────────────── */
-.m4l-strip {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.4rem 0.6rem; margin-top: 0.5rem;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); min-height: 30px;
-  transition: border-color 0.2s;
+.sig-btn {
+  flex: 1; padding: 8px 8px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 2px; cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-mid);
+  transition: all 0.1s;
 }
-.m4l-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--ink-dim); flex-shrink: 0;
-  transition: background 0.1s, box-shadow 0.1s;
+.sig-btn:hover { border-color: rgba(0,245,212,0.2); color: var(--ink); background: rgba(0,245,212,0.04); }
+.sig-btn:active { transform: scale(0.98); }
+.sig-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+.sig-btn.enabled-btn {
+  background: rgba(0,232,170,0.06);
+  border-color: rgba(0,232,170,0.2);
+  color: var(--connected);
 }
-.m4l-dot.active {
-  background: var(--pink);
-  box-shadow: 0 0 8px var(--pink), 0 0 16px rgba(236,72,153,0.5);
-  animation: m4l-flash 0.5s ease-out;
-}
-@keyframes m4l-flash {
-  0%   { box-shadow: 0 0 20px var(--pink), 0 0 40px rgba(236,72,153,0.7); }
-  100% { box-shadow: 0 0 6px var(--pink); }
-}
-.m4l-label {
-  font-size: 0.6rem; color: var(--ink-dim);
-  letter-spacing: 0.1em; text-transform: uppercase;
-  font-weight: 500; flex-shrink: 0; font-family: var(--mono);
-}
-.m4l-label.active { color: var(--pink); }
-.m4l-path {
-  font-family: var(--mono); font-size: 0.63rem; color: var(--ink-mid);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
-}
-.m4l-value {
-  font-family: var(--mono); font-size: 0.7rem; color: var(--green);
-  font-variant-numeric: tabular-nums; flex-shrink: 0;
-  text-shadow: 0 0 8px var(--green-glow);
+.sig-btn.enabled-btn:hover {
+  background: rgba(0,232,170,0.1);
+  border-color: rgba(0,232,170,0.35);
+  box-shadow: 0 0 12px rgba(0,232,170,0.1);
 }
 
-/* ─── DISCOVERED DEVICES ─────────────────────────────────── */
+.node-card.disabled .sig-btn.enabled-btn {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.07);
+  color: var(--ink-mid);
+}
+
+/* ─── SAVE HINT ──────────────────────────────────── */
+.save-hint {
+  font-family: var(--mono); font-size: 0.55rem;
+  text-align: right; height: 12px; color: transparent;
+  margin-top: 3px; transition: color 0.2s; letter-spacing: 0.05em;
+}
+.save-hint.ok  { color: var(--connected); }
+.save-hint.err { color: var(--lost); }
+
+/* ─── DISCOVERED ─────────────────────────────────── */
 .discovered-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.875rem; margin-bottom: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem; margin-bottom: 2rem;
 }
+
 .discovered-card {
-  background: var(--surface); border: 1px dashed rgba(245,158,11,0.3);
-  border-radius: var(--radius); padding: 1.1rem; position: relative;
-  opacity: 0.85; transition: opacity 0.2s, border-color 0.2s;
+  background: rgba(3,4,15,0.75);
+  backdrop-filter: blur(20px);
+  border: 1px dashed rgba(255,178,56,0.2);
+  border-radius: var(--radius); padding: 1rem;
+  position: relative; opacity: 0.85;
+  transition: opacity 0.2s, border-color 0.2s;
 }
-.discovered-card:hover { opacity: 1; border-color: rgba(245,158,11,0.5); }
+.discovered-card:hover { opacity: 1; border-color: rgba(255,178,56,0.4); }
+
 .discovered-tag {
   position: absolute; top: 0.75rem; right: 0.875rem;
-  font-size: 0.58rem; color: var(--yellow); letter-spacing: 0.15em;
-  text-transform: uppercase; font-weight: 500;
-  background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.2);
-  padding: 0.1rem 0.4rem; border-radius: 3px;
+  font-size: 0.48rem; color: var(--connecting); letter-spacing: 0.2em;
+  text-transform: uppercase; font-weight: 700;
+  font-family: var(--display);
+  background: rgba(255,178,56,0.08); border: 1px solid rgba(255,178,56,0.2);
+  padding: 0.1rem 0.4rem; border-radius: 2px;
 }
+
 .discovered-name {
-  font-size: 0.9rem; font-weight: 500; color: var(--ink);
-  margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.5rem;
+  font-family: var(--display);
+  font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink); margin-bottom: 0.3rem;
+  display: flex; align-items: center; gap: 0.5rem;
 }
 .discovered-pulse {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--yellow);
-  box-shadow: 0 0 6px var(--yellow-glow);
-  animation: pulse-dot 1.5s ease-in-out infinite; flex-shrink: 0;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--connecting);
+  box-shadow: 0 0 6px rgba(255,178,56,0.5);
+  animation: breathe 1.5s ease-in-out infinite; flex-shrink: 0;
 }
+
 .discovered-host {
-  font-family: var(--mono); font-size: 0.73rem; color: var(--ink-dim);
+  font-family: var(--mono); font-size: 0.68rem; color: var(--ink-mid);
   margin-bottom: 0.875rem; padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--border);
 }
+
 .discovered-name-input {
-  width: 100%; background: var(--bg-3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--ink);
-  padding: 0.5rem 0.75rem; font-family: var(--sans); font-size: 0.82rem;
+  width: 100%; background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(0,245,212,0.15);
+  border-radius: 2px; color: var(--ink);
+  padding: 0.45rem 0.65rem;
+  font-family: var(--mono); font-size: 0.78rem;
   margin-bottom: 0.6rem; outline: none; display: none;
   transition: border-color 0.15s;
 }
-.discovered-name-input:focus { border-color: var(--accent); }
+.discovered-name-input:focus { border-color: rgba(0,245,212,0.4); }
 
-/* ─── EMPTY STATE ────────────────────────────────────────── */
-.empty {
-  grid-column: 1/-1; text-align: center; color: var(--ink-dim);
-  padding: 4rem; border: 1px dashed var(--border); border-radius: var(--radius);
-  font-size: 0.85rem;
+.btn {
+  flex: 1; padding: 0.45rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px; color: var(--ink-mid);
+  font-family: var(--display); font-size: 0.48rem;
+  font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; cursor: pointer;
+  transition: all 0.12s; white-space: nowrap;
+  display: flex; align-items: center; justify-content: center; gap: 0.35rem;
+}
+.btn:hover { border-color: var(--border-2); color: var(--ink); background: var(--surface-2); }
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn.primary {
+  background: rgba(0,245,212,0.08); border-color: rgba(0,245,212,0.25);
+  color: var(--signal);
+}
+.btn.primary:hover { background: rgba(0,245,212,0.13); box-shadow: 0 0 12px rgba(0,245,212,0.1); }
+
+/* ─── OFFLINE SECTION ────────────────────────────── */
+.offline-section { margin-top: 1rem; margin-bottom: 2rem; }
+
+.offline-toggle {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.55rem 0.875rem;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.045);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--display); font-size: 0.58rem;
+  font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-dim);
+  width: 100%;
+  transition: all 0.15s;
+  margin-bottom: 0.5rem;
+}
+.offline-toggle:hover { border-color: rgba(255,255,255,0.09); color: var(--ink-mid); }
+.offline-toggle-arrow { color: rgba(0,245,212,0.3); font-size: 0.55rem; }
+.offline-toggle-count {
+  margin-left: auto;
+  font-size: 0.55rem; font-weight: 400; opacity: 0.45;
+  font-family: var(--mono); letter-spacing: 0;
 }
 
-/* ─── MISC ───────────────────────────────────────────────── */
-@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+.offline-grid {
+  display: none;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.4rem;
+}
+.offline-grid.open { display: grid; }
 
-.device-params-bar { margin-top: 0.5rem; }
+.offline-card {
+  display: flex; align-items: center; gap: 0.65rem;
+  padding: 0.55rem 0.875rem;
+  background: rgba(255,255,255,0.012);
+  border: 1px solid rgba(255,255,255,0.035);
+  border-radius: 2px;
+}
+.offline-card-info { flex: 1; min-width: 0; }
+.offline-card-name {
+  font-family: var(--display); font-size: 0.7rem;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.offline-card-type {
+  font-size: 0.6rem; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  font-family: var(--mono); margin-top: 2px;
+}
+.offline-enable-btn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid rgba(0,245,212,0.12);
+  border-radius: 2px; cursor: pointer;
+  font-family: var(--display); font-size: 0.55rem;
+  font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: rgba(0,245,212,0.4);
+  transition: all 0.1s;
+}
+.offline-enable-btn:hover {
+  border-color: rgba(0,245,212,0.35);
+  color: var(--signal);
+  background: rgba(0,245,212,0.05);
+}
+
+/* ─── EMPTY STATE ────────────────────────────────── */
+.empty {
+  grid-column: 1/-1; text-align: center; color: var(--ink-dim);
+  padding: 4rem; border: 1px dashed rgba(0,245,212,0.06);
+  border-radius: var(--radius); font-family: var(--display);
+  font-size: 0.55rem; letter-spacing: 0.2em; text-transform: uppercase;
+}
 </style>
 </head>
 <body>
+
 <div class="app">
 
   <!-- ── TOPBAR ─────────────────────────────── -->
   <header class="topbar">
     <div class="logo">
       <div class="logo-icon">◎</div>
-      <div class="logo-text">OSCQuery <span>Hub</span></div>
+      <span>OSCQuery</span>
+      <span class="logo-sub">Hub</span>
     </div>
     <div class="topbar-spacer"></div>
     <div class="ws-badge" id="status">
       <span class="dot"></span>
-      <span id="status-text">Bağlanıyor…</span>
+      <span id="status-text">Connecting…</span>
     </div>
   </header>
 
   <!-- ── MAIN ───────────────────────────────── -->
   <main class="main">
 
-    <!-- Stats -->
-    <div class="stats-row">
-      <div class="stat-card">
-        <div class="stat-num" id="stat-devices-total">0</div>
-        <div class="stat-label">Toplam Cihaz</div>
+    <!-- HUD Stats -->
+    <div class="hud-bar">
+      <div class="hud-cell">
+        <div class="hud-num" id="stat-devices-total">0</div>
+        <div class="hud-label">Nodes</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" id="stat-devices-active">0</div>
-        <div class="stat-label">Aktif</div>
+      <div class="hud-cell">
+        <div class="hud-num" id="stat-devices-active">0</div>
+        <div class="hud-label">Active</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" id="stat-devices-conn">0</div>
-        <div class="stat-label">Bağlı</div>
+      <div class="hud-cell">
+        <div class="hud-num" id="stat-devices-conn">0</div>
+        <div class="hud-label">Online</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" id="stat-params">0</div>
-        <div class="stat-label">Parametre</div>
+      <div class="hud-cell">
+        <div class="hud-num" id="stat-params">0</div>
+        <div class="hud-label">Params</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" id="stat-rate">0</div>
-        <div class="stat-label">Msg / Sn</div>
+      <div class="hud-cell">
+        <div class="hud-num" id="stat-rate">0</div>
+        <div class="hud-label">Msg/s</div>
       </div>
     </div>
 
-    <!-- Ableton Banner -->
-    <div class="ableton-banner">
-      <div class="ableton-banner-left">
-        <div class="ableton-banner-icon">♪</div>
-        <div class="ableton-banner-text">
-          <strong>Ableton Forwarder Aktif</strong> —
-          Mesajlar <code>/device&lt;id&gt;/&lt;param&gt;</code> olarak
-          <code>127.0.0.1:10000</code>'e iletiliyor
+    <!-- Signal Banner (Ableton) -->
+    <div class="signal-banner">
+      <div class="signal-banner-left">
+        <div class="signal-icon">♩</div>
+        <div class="signal-text">
+          <strong>Ableton Forwarder Active</strong> —
+          Messages forwarded as <code>/device&lt;id&gt;/&lt;param&gt;</code> to
+          <code>127.0.0.1:10000</code>
         </div>
       </div>
       <div>
-        <div class="ableton-count" id="ableton-total">0</div>
-        <div class="ableton-count-label">Toplam Mesaj</div>
+        <div class="signal-count" id="ableton-total">0</div>
+        <div class="signal-count-label">Total Msg</div>
       </div>
     </div>
 
     <!-- Manifest Devices -->
     <div class="section-header">
-      <div class="section-title">Manifest Cihazları</div>
-      <div class="section-hint">IP'ye tıklayıp düzenle · Enable ile bağlan · Params ile veriyi aç</div>
+      <div class="section-title">Signal Nodes</div>
+      <div class="section-hint">Click IP to edit · Connect with Enable</div>
     </div>
     <div class="devices-grid" id="devices">
-      <div class="empty">Manifest yükleniyor…</div>
+      <div class="empty">Loading nodes…</div>
+    </div>
+
+    <!-- Offline Nodes -->
+    <div class="offline-section" id="offline-section" style="display:none">
+      <button class="offline-toggle" onclick="toggleOfflineSection()">
+        <span class="offline-toggle-arrow" id="offline-arrow">▾</span>
+        <span>Offline Nodes</span>
+        <span class="offline-toggle-count" id="offline-count">0</span>
+      </button>
+      <div class="offline-grid" id="offline-grid"></div>
     </div>
 
     <!-- Discovered -->
     <div class="section-header" id="discovered-header" style="display:none">
-      <div class="section-title">Ağda Keşfedilen</div>
-      <div class="section-hint">Manifest'te olmayan yeni cihazlar · Ekle ile kaydet</div>
+      <div class="section-title">Discovered Devices</div>
+      <div class="section-hint">New signal sources not in manifest</div>
     </div>
     <div class="discovered-grid" id="discovered"></div>
 
@@ -577,434 +968,565 @@ code {
 </div>
 
 <script>
-  // ── XSS KORUMA ─────────────────────────────────────────────
-  function esc(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+// ── XSS KORUMA ─────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+const SAFE_STATUS = new Set(['connected','connecting','lost','configured','disabled','error']);
+function safeClass(s) { return SAFE_STATUS.has(s) ? s : 'configured'; }
+
+function showAddForm(btn) {
+  btn.closest('.discovered-card').querySelector('.discovered-name-input').style.display = 'block';
+  btn.style.display = 'none';
+  btn.nextElementSibling.style.display = 'flex';
+}
+function addDiscoveredFromBtn(btn, name) {
+  addDiscovered(btn.dataset.host, parseInt(btn.dataset.port, 10), name);
+}
+
+// ── STATE ───────────────────────────────────────────────────────
+const deviceParams   = new Map();
+const expandedDevices = new Set();
+const devices         = new Map();
+const deviceMsgCounts = new Map();
+const m4lFeedback     = new Map();
+let msgsThisSecond = 0;
+let abletonTotal   = 0;
+let ws = null;
+
+const elDiscovered       = document.getElementById('discovered');
+const elDiscoveredHeader = document.getElementById('discovered-header');
+const elStatus           = document.getElementById('status');
+const elStatusText       = document.getElementById('status-text');
+const elDevices          = document.getElementById('devices');
+const elStatDevTotal     = document.getElementById('stat-devices-total');
+const elStatDevActive    = document.getElementById('stat-devices-active');
+const elStatDevConn      = document.getElementById('stat-devices-conn');
+const elStatParams       = document.getElementById('stat-params');
+const elStatRate         = document.getElementById('stat-rate');
+const elAbletonTotal     = document.getElementById('ableton-total');
+
+function setStatus(connected, text) {
+  elStatus.classList.toggle('connected', connected);
+  elStatusText.textContent = text;
+}
+
+function formatValue(value) {
+  if (Array.isArray(value)) return value.map(v => typeof v === 'number' ? v.toFixed(3) : v).join(', ');
+  return typeof value === 'number' ? value.toFixed(3) : value;
+}
+
+function updateStats() {
+  let active = 0, conn = 0;
+  for (const d of devices.values()) {
+    if (d.enabled) active++;
+    if (d.status === 'connected') conn++;
   }
-  const SAFE_STATUS = new Set(['connected','connecting','lost','configured','disabled','error']);
-  function safeClass(s) { return SAFE_STATUS.has(s) ? s : 'configured'; }
+  let paramCount = 0;
+  for (const m of deviceParams.values()) paramCount += m.size;
+  elStatDevTotal.textContent  = devices.size;
+  elStatDevActive.textContent = active;
+  elStatDevConn.textContent   = conn;
+  elStatParams.textContent    = paramCount;
+  elAbletonTotal.textContent  = abletonTotal;
+}
 
-  function showAddForm(btn) {
-    btn.closest('.discovered-card').querySelector('.discovered-name-input').style.display = 'block';
-    btn.style.display = 'none';
-    btn.nextElementSibling.style.display = 'flex';
-  }
-  function addDiscoveredFromBtn(btn, name) {
-    addDiscovered(btn.dataset.host, parseInt(btn.dataset.port, 10), name);
-  }
-  // ───────────────────────────────────────────────────────────
+setInterval(() => { elStatRate.textContent = msgsThisSecond; msgsThisSecond = 0; }, 1000);
 
-  const deviceParams   = new Map();
-  const expandedDevices = new Set();
-  const devices         = new Map();
-  const deviceMsgCounts = new Map();
-  const m4lFeedback     = new Map();
-  let msgsThisSecond = 0;
-  let abletonTotal   = 0;
-  let ws = null;
+function sendUpdateDevice(deviceId, updates) {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'UPDATE_DEVICE', deviceId, updates }));
+}
+function sendReconnect(deviceId) {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'RECONNECT_DEVICE', deviceId }));
+}
 
-  const elDiscovered        = document.getElementById('discovered');
-  const elDiscoveredHeader  = document.getElementById('discovered-header');
-  const elStatus            = document.getElementById('status');
-  const elStatusText        = document.getElementById('status-text');
-  const elDevices           = document.getElementById('devices');
-  const elStatDevTotal      = document.getElementById('stat-devices-total');
-  const elStatDevActive     = document.getElementById('stat-devices-active');
-  const elStatDevConn       = document.getElementById('stat-devices-conn');
-  const elStatParams        = document.getElementById('stat-params');
-  const elStatRate          = document.getElementById('stat-rate');
-  const elAbletonTotal      = document.getElementById('ableton-total');
+function isValidIp(s)   { return /^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(s) || /^[a-zA-Z0-9.\-]+$/.test(s); }
+function isValidPort(s) { const n = parseInt(s, 10); return !isNaN(n) && n > 0 && n < 65536; }
 
-  function setStatus(connected, text) {
-    elStatus.classList.toggle('connected', connected);
-    elStatusText.textContent = text;
-  }
-
-  function formatValue(value) {
-    if (Array.isArray(value)) return value.map(v => typeof v === 'number' ? v.toFixed(3) : v).join(', ');
-    return typeof value === 'number' ? value.toFixed(3) : value;
-  }
-
-  function updateStats() {
-    let active = 0, conn = 0;
-    for (const d of devices.values()) {
-      if (d.enabled) active++;
-      if (d.status === 'connected') conn++;
+function attachEditable(el, deviceId, field, validator) {
+  el.contentEditable = 'true';
+  el.spellcheck = false;
+  let orig = el.textContent;
+  el.addEventListener('focus', () => { orig = el.textContent; el.classList.remove('error'); });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); el.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); el.textContent = orig; el.blur(); }
+  });
+  el.addEventListener('blur', () => {
+    const v = el.textContent.trim();
+    if (v === orig) return;
+    if (validator && !validator(v)) {
+      el.classList.add('error'); showHint(deviceId, 'Invalid value', 'err'); el.textContent = orig; return;
     }
-    let paramCount = 0;
-    for (const m of deviceParams.values()) paramCount += m.size;
-    elStatDevTotal.textContent  = devices.size;
-    elStatDevActive.textContent = active;
-    elStatDevConn.textContent   = conn;
-    elStatParams.textContent    = paramCount;
-    elAbletonTotal.textContent  = abletonTotal;
-  }
+    const updates = {};
+    updates[field] = field === 'oscQueryPort' ? parseInt(v, 10) : v;
+    sendUpdateDevice(deviceId, updates);
+    flagSaving(deviceId);
+  });
+}
 
-  setInterval(() => { elStatRate.textContent = msgsThisSecond; msgsThisSecond = 0; }, 1000);
+function flagSaving(id) {
+  const c = document.getElementById(`dev-${id}`); if (!c) return;
+  c.classList.add('saving'); showHint(id, 'Saving…', '');
+}
+function flagSaved(id) {
+  const c = document.getElementById(`dev-${id}`); if (!c) return;
+  c.classList.remove('saving'); c.classList.add('saved');
+  showHint(id, '✓ Saved', 'ok');
+  setTimeout(() => { c.classList.remove('saved'); showHint(id, '', ''); }, 1500);
+}
+function flagError(id, err) {
+  const c = document.getElementById(`dev-${id}`); if (!c) return;
+  c.classList.remove('saving'); showHint(id, '✗ ' + err, 'err');
+}
+function showHint(id, text, type) {
+  const c = document.getElementById(`dev-${id}`); if (!c) return;
+  const h = c.querySelector('.save-hint');
+  if (h) { h.textContent = text; h.className = 'save-hint ' + (type || ''); }
+}
 
-  function sendUpdateDevice(deviceId, updates) {
-    if (ws && ws.readyState === WebSocket.OPEN)
-      ws.send(JSON.stringify({ type: 'UPDATE_DEVICE', deviceId, updates }));
-  }
-  function sendReconnect(deviceId) {
-    if (ws && ws.readyState === WebSocket.OPEN)
-      ws.send(JSON.stringify({ type: 'RECONNECT_DEVICE', deviceId }));
-  }
+function statusLabel(dev) {
+  if (!dev.enabled) return 'OFFLINE';
+  if (dev.status === 'connecting') return 'SYNC…';
+  if (dev.status === 'connected')  return `LIVE · ${dev.paramCount || 0}p`;
+  if (dev.status === 'lost')       return 'LOST';
+  return 'STANDBY';
+}
 
-  function isValidIp(s)   { return /^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(s) || /^[a-zA-Z0-9.\-]+$/.test(s); }
-  function isValidPort(s) { const n = parseInt(s, 10); return !isNaN(n) && n > 0 && n < 65536; }
+function getDeviceIdByName(name) {
+  for (const [id, dev] of devices.entries()) if (dev.name === name) return id;
+  return null;
+}
 
-  function attachEditable(el, deviceId, field, validator) {
-    el.contentEditable = 'true';
-    el.spellcheck = false;
-    let orig = el.textContent;
-    el.addEventListener('focus', () => { orig = el.textContent; el.classList.remove('error'); });
-    el.addEventListener('keydown', e => {
-      if (e.key === 'Enter')  { e.preventDefault(); el.blur(); }
-      if (e.key === 'Escape') { e.preventDefault(); el.textContent = orig; el.blur(); }
-    });
-    el.addEventListener('blur', () => {
-      const v = el.textContent.trim();
-      if (v === orig) return;
-      if (validator && !validator(v)) {
-        el.classList.add('error'); showHint(deviceId, 'Geçersiz değer', 'err'); el.textContent = orig; return;
-      }
-      const updates = {};
-      updates[field] = field === 'oscQueryPort' ? parseInt(v, 10) : v;
-      sendUpdateDevice(deviceId, updates);
-      flagSaving(deviceId);
-    });
-  }
+function inferDeviceName(path) {
+  const first = path.split('/').filter(Boolean)[0];
+  if (!first) return null;
+  for (const dev of devices.values()) if (dev.name === first) return dev.name;
+  return null;
+}
 
-  function flagSaving(id) {
-    const c = document.getElementById(`dev-${id}`); if (!c) return;
-    c.classList.add('saving'); showHint(id, 'Kaydediliyor…', '');
+function toggleDeviceParams(devId) {
+  const list = document.getElementById(`params-list-${devId}`);
+  const btn  = document.getElementById(`params-toggle-${devId}`);
+  if (!list) return;
+  if (expandedDevices.has(devId)) {
+    expandedDevices.delete(devId);
+    list.classList.remove('open');
+    if (btn) { btn.classList.remove('open'); btn.querySelector('.arrow').textContent = '▾'; }
+  } else {
+    expandedDevices.add(devId);
+    list.classList.add('open');
+    if (btn) { btn.classList.add('open'); btn.querySelector('.arrow').textContent = '▴'; }
+    list.innerHTML = '';
+    const dp = deviceParams.get(devId);
+    if (dp) for (const [path, data] of dp.entries()) upsertParamRow(list, devId, path, data);
   }
-  function flagSaved(id) {
-    const c = document.getElementById(`dev-${id}`); if (!c) return;
-    c.classList.remove('saving'); c.classList.add('saved');
-    showHint(id, '✓ Kaydedildi', 'ok');
-    setTimeout(() => { c.classList.remove('saved'); showHint(id, '', ''); }, 1500);
-  }
-  function flagError(id, err) {
-    const c = document.getElementById(`dev-${id}`); if (!c) return;
-    c.classList.remove('saving'); showHint(id, '✗ ' + err, 'err');
-  }
-  function showHint(id, text, type) {
-    const c = document.getElementById(`dev-${id}`); if (!c) return;
-    const h = c.querySelector('.save-hint');
-    if (h) { h.textContent = text; h.className = 'save-hint ' + (type || ''); }
-  }
+}
 
-  function statusLabel(dev) {
-    if (!dev.enabled) return 'DISABLED';
-    if (dev.status === 'connecting') return 'CONNECTING…';
-    if (dev.status === 'connected')  return `CONNECTED · ${dev.paramCount || 0} params`;
-    if (dev.status === 'lost')       return 'CONNECTION LOST';
-    return 'CONFIGURED';
+function upsertParamRow(container, devId, path, data) {
+  const devName = devices.get(devId)?.name;
+  const prefix  = devName ? '/' + devName : '';
+  const display = (prefix && path.startsWith(prefix)) ? path.slice(prefix.length) : path;
+  const rowId   = `dp-${devId}-${path.replace(/\//g, '_')}`;
+  let row = document.getElementById(rowId);
+  if (!row) {
+    row = document.createElement('div');
+    row.id = rowId;
+    row.className = 'device-param-row';
+    const pathSpan = document.createElement('span');
+    pathSpan.className = 'dp-path'; pathSpan.title = path; pathSpan.textContent = display;
+    const typeSpan = document.createElement('span');
+    typeSpan.className = 'dp-type'; typeSpan.textContent = data.paramType || data.type || '?';
+    const valSpan = document.createElement('span');
+    valSpan.className = 'dp-value';
+    row.appendChild(pathSpan); row.appendChild(typeSpan); row.appendChild(valSpan);
+    container.appendChild(row);
   }
+  row.querySelector('.dp-value').textContent = formatValue(data.value ?? data.VALUE);
+  row.classList.add('flash');
+  clearTimeout(row._ft);
+  row._ft = setTimeout(() => row.classList.remove('flash'), 120);
+}
 
-  function getDeviceIdByName(name) {
-    for (const [id, dev] of devices.entries()) if (dev.name === name) return id;
-    return null;
-  }
-
-  function inferDeviceName(path) {
-    const first = path.split('/').filter(Boolean)[0];
-    if (!first) return null;
-    for (const dev of devices.values()) if (dev.name === first) return dev.name;
-    return null;
-  }
-
-  function toggleDeviceParams(devId) {
+function processParam(path, data) {
+  const devId = data.deviceName ? getDeviceIdByName(data.deviceName) : null;
+  if (devId === null) return;
+  if (!deviceParams.has(devId)) deviceParams.set(devId, new Map());
+  deviceParams.get(devId).set(path, data);
+  const badge = document.getElementById(`params-count-${devId}`);
+  if (badge) badge.textContent = deviceParams.get(devId).size;
+  if (expandedDevices.has(devId)) {
     const list = document.getElementById(`params-list-${devId}`);
-    const btn  = document.getElementById(`params-toggle-${devId}`);
-    if (!list) return;
-    if (expandedDevices.has(devId)) {
-      expandedDevices.delete(devId);
-      list.classList.remove('open');
-      if (btn) { btn.classList.remove('open'); btn.querySelector('.arrow').textContent = '▾'; }
-    } else {
-      expandedDevices.add(devId);
-      list.classList.add('open');
-      if (btn) { btn.classList.add('open'); btn.querySelector('.arrow').textContent = '▴'; }
-      list.innerHTML = '';
-      const dp = deviceParams.get(devId);
-      if (dp) for (const [path, data] of dp.entries()) upsertParamRow(list, devId, path, data);
-    }
+    if (list) upsertParamRow(list, devId, path, data);
+  }
+  flashDevice(devId);
+}
+
+function flashDevice(devId) {
+  const c = document.getElementById(`dev-${devId}`); if (!c) return;
+  c.classList.add('flash');
+  clearTimeout(c._ft);
+  c._ft = setTimeout(() => c.classList.remove('flash'), 200);
+}
+
+function toggleOfflineSection() {
+  const grid   = document.getElementById('offline-grid');
+  const arrow  = document.getElementById('offline-arrow');
+  const isOpen = grid.classList.toggle('open');
+  if (arrow) arrow.textContent = isOpen ? '▴' : '▾';
+}
+
+function renderOfflineCards(devList) {
+  const section  = document.getElementById('offline-section');
+  const grid     = document.getElementById('offline-grid');
+  const countEl  = document.getElementById('offline-count');
+  if (!section || !grid) return;
+  if (devList.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  if (countEl) countEl.textContent = devList.length;
+  grid.innerHTML = '';
+  for (const dev of devList) {
+    const c = document.createElement('div');
+    c.className = 'offline-card';
+    c.innerHTML = `
+      <div class="offline-card-info">
+        <div class="offline-card-name">${esc(dev.name)}</div>
+        <div class="offline-card-type">${esc(dev.type)}</div>
+      </div>
+      <button class="offline-enable-btn"
+        onclick="sendUpdateDevice(${dev.id},{enabled:true});flagSaving(${dev.id})">Enable</button>
+    `;
+    grid.appendChild(c);
+  }
+}
+
+function renderDevices() {
+  if (devices.size === 0) { elDevices.innerHTML = '<div class="empty">No signal nodes found</div>'; renderOfflineCards([]); return; }
+  elDevices.innerHTML = '';
+  const sorted = Array.from(devices.values()).sort((a, b) => a.id - b.id);
+
+  // permanent=true → always show; others → only show when enabled
+  const mainDevs    = sorted.filter(d => d.permanent || d.enabled);
+  const offlineDevs = sorted.filter(d => !d.permanent && !d.enabled);
+
+  if (mainDevs.length === 0) {
+    elDevices.innerHTML = '<div class="empty">No active nodes — enable devices below</div>';
   }
 
-  function upsertParamRow(container, devId, path, data) {
-    const devName = devices.get(devId)?.name;
-    const prefix  = devName ? '/' + devName : '';
-    const display = (prefix && path.startsWith(prefix)) ? path.slice(prefix.length) : path;
-    const rowId   = `dp-${devId}-${path.replace(/\//g, '_')}`;
-    let row = document.getElementById(rowId);
-    if (!row) {
-      row = document.createElement('div');
-      row.id = rowId;
-      row.className = 'device-param-row';
+  renderOfflineCards(offlineDevs);
 
-      const pathSpan = document.createElement('span');
-      pathSpan.className   = 'dp-path';
-      pathSpan.title       = path;
-      pathSpan.textContent = display;
+  for (const dev of mainDevs) {
+    const statusClass = dev.enabled ? (dev.status || 'configured') : 'disabled';
+    const msgCount    = deviceMsgCounts.get(dev.id) || 0;
+    const paramCount  = deviceParams.get(dev.id)?.size || 0;
+    const isExpanded  = expandedDevices.has(dev.id);
 
-      const typeSpan = document.createElement('span');
-      typeSpan.className   = 'dp-type';
-      typeSpan.textContent = data.paramType || data.type || '?';
+    const card = document.createElement('div');
+    card.className = `node-card ${safeClass(statusClass)}`;
+    card.id = `dev-${dev.id}`;
 
-      const valSpan = document.createElement('span');
-      valSpan.className = 'dp-value';
 
-      row.appendChild(pathSpan);
-      row.appendChild(typeSpan);
-      row.appendChild(valSpan);
-      container.appendChild(row);
-    }
-    row.querySelector('.dp-value').textContent = formatValue(data.value ?? data.VALUE);
-    row.classList.add('flash');
-    clearTimeout(row._ft);
-    row._ft = setTimeout(() => row.classList.remove('flash'), 120);
-  }
-
-  function processParam(path, data) {
-    const devId = data.deviceName ? getDeviceIdByName(data.deviceName) : null;
-    if (devId === null) return;
-    if (!deviceParams.has(devId)) deviceParams.set(devId, new Map());
-    deviceParams.get(devId).set(path, data);
-    const badge = document.getElementById(`params-count-${devId}`);
-    if (badge) badge.textContent = deviceParams.get(devId).size;
-    if (expandedDevices.has(devId)) {
-      const list = document.getElementById(`params-list-${devId}`);
-      if (list) upsertParamRow(list, devId, path, data);
-    }
-    flashDevice(devId);
-  }
-
-  function flashDevice(devId) {
-    const c = document.getElementById(`dev-${devId}`); if (!c) return;
-    c.classList.add('flash');
-    clearTimeout(c._ft);
-    c._ft = setTimeout(() => c.classList.remove('flash'), 200);
-  }
-
-  function renderDevices() {
-    if (devices.size === 0) { elDevices.innerHTML = '<div class="empty">Manifest dosyası yok</div>'; return; }
-    elDevices.innerHTML = '';
-    const sorted = Array.from(devices.values()).sort((a, b) => a.id - b.id);
-    for (const dev of sorted) {
-      const statusClass = dev.enabled ? (dev.status || 'configured') : 'disabled';
-      const msgCount    = deviceMsgCounts.get(dev.id) || 0;
-      const paramCount  = deviceParams.get(dev.id)?.size || 0;
-      const isExpanded  = expandedDevices.has(dev.id);
-
-      const card = document.createElement('div');
-      card.className = `device-card ${safeClass(statusClass)}`;
-      card.id = `dev-${dev.id}`;
-      card.innerHTML = `
-        <div class="device-header">
+    card.innerHTML = `
+      <div class="card-inner">
+        <div class="card-head">
           <div>
-            <div class="device-name-row">
-              <div class="device-status-dot"></div>
-              <span class="device-name editable" data-field="name">${esc(dev.name)}</span>
+            <div class="card-name editable" data-field="name">${esc(dev.name)}</div>
+            <div class="card-type">${esc(dev.type)}</div>
+          </div>
+          <div class="card-status-block">
+            <span class="card-id">#${String(dev.id).padStart(2,'0')}</span>
+            <div class="status-dot-wrap">
+              <div class="status-dot"></div>
+              <span class="status-text">${statusLabel(dev)}</span>
             </div>
-            <div class="device-type">${esc(dev.type)}</div>
-          </div>
-          <div class="device-id-badge">#${dev.id}</div>
-        </div>
-
-        <div class="device-host-row">
-          <span class="host-label">Host</span>
-          <span class="editable" data-field="host">${esc(dev.host)}</span>
-          <span class="host-sep">:</span>
-          <span class="editable" data-field="oscQueryPort">${esc(String(dev.oscQueryPort))}</span>
-        </div>
-
-        <div class="device-footer">
-          <div class="device-status-row">
-            <span class="device-status-text ${safeClass(dev.status || '')}">${esc(statusLabel(dev))}</span>
-            <span class="device-msgs" id="dev-msgs-${dev.id}" style="${msgCount > 0 ? '' : 'display:none'}">${msgCount}</span>
-          </div>
-
-          <div class="device-actions">
-            <button class="btn ${dev.enabled ? 'primary' : ''}" data-action="toggle">
-              <span class="btn-icon">${dev.enabled ? '●' : '○'}</span>
-              ${dev.enabled ? 'Enabled' : 'Enable'}
-            </button>
-            <button class="btn" data-action="reconnect" ${!dev.enabled ? 'disabled' : ''}>
-              ⟳ Reconnect
-            </button>
-          </div>
-
-          <div class="save-hint"></div>
-
-          <div class="device-params-bar">
-            <button id="params-toggle-${dev.id}"
-                    class="params-toggle-btn${isExpanded ? ' open' : ''}"
-                    onclick="toggleDeviceParams(${dev.id})">
-              <span style="display:flex;align-items:center;gap:0.4rem">
-                <span class="arrow">${isExpanded ? '▴' : '▾'}</span>
-                Parameters
-              </span>
-              <span id="params-count-${dev.id}" class="params-count-badge">${paramCount}</span>
-            </button>
-            <div id="params-list-${dev.id}" class="device-params-list${isExpanded ? ' open' : ''}"></div>
-          </div>
-
-          <div class="m4l-strip" id="m4l-strip-${dev.id}">
-            <div class="m4l-dot" id="m4l-dot-${dev.id}"></div>
-            <span class="m4l-label" id="m4l-label-${dev.id}">◄ M4L</span>
-            <span class="m4l-path"  id="m4l-path-${dev.id}"></span>
-            <span class="m4l-value" id="m4l-val-${dev.id}"></span>
           </div>
         </div>
-      `;
 
-      attachEditable(card.querySelector('[data-field="name"]'),         dev.id, 'name',         s => s.length > 0);
-      attachEditable(card.querySelector('[data-field="host"]'),         dev.id, 'host',         isValidIp);
-      attachEditable(card.querySelector('[data-field="oscQueryPort"]'), dev.id, 'oscQueryPort', isValidPort);
-
-      card.querySelector('[data-action="toggle"]').onclick    = () => { sendUpdateDevice(dev.id, { enabled: !dev.enabled }); flagSaving(dev.id); };
-      card.querySelector('[data-action="reconnect"]').onclick = () => { sendReconnect(dev.id); showHint(dev.id, 'Yeniden bağlanıyor…', ''); };
-
-      elDevices.appendChild(card);
-
-      if (isExpanded) {
-        const list = document.getElementById(`params-list-${dev.id}`);
-        const dp   = deviceParams.get(dev.id);
-        if (list && dp) for (const [path, data] of dp.entries()) upsertParamRow(list, dev.id, path, data);
-      }
-    }
-    restoreM4LStrips();
-  }
-
-  function processInitialState(tree) {
-    function walk(node, path) {
-      if (node.TYPE !== undefined)
-        processParam(path, { paramType: node.TYPE, value: node.VALUE, deviceName: inferDeviceName(path) });
-      if (node.CONTENTS)
-        for (const [k, child] of Object.entries(node.CONTENTS)) walk(child, path + '/' + k);
-    }
-    walk(tree, '');
-    updateStats();
-  }
-
-  function connect() {
-    ws = new WebSocket(`ws://${location.host}`);
-    ws.onopen  = () => setStatus(true, 'Bağlı');
-    ws.onclose = () => { setStatus(false, 'Bağlantı koptu — yeniden deneniyor…'); setTimeout(connect, 1500); };
-    ws.onerror = () => setStatus(false, 'Hata');
-
-    ws.onmessage = ({ data: raw }) => {
-      const msg = JSON.parse(raw);
-
-      if (msg.type === 'INITIAL_STATE') {
-        if (msg.devices) { for (const d of msg.devices) devices.set(d.id, d); renderDevices(); }
-        if (msg.discoveredDevices) renderDiscovered(msg.discoveredDevices);
-        processInitialState(msg.namespace);
-        updateStats();
-      }
-      else if (msg.type === 'PATH_CHANGED') {
-        processParam(msg.path, msg);
-        msgsThisSecond++;
-        updateStats();
-      }
-      else if (msg.type === 'DEVICES_RELOADED') {
-        if (msg.devices) { devices.clear(); for (const d of msg.devices) devices.set(d.id, d); }
-        renderDevices(); updateStats();
-      }
-      else if (msg.type === 'DEVICE_UPDATED') {
-        if (msg.device) { devices.set(msg.device.id, msg.device); renderDevices(); updateStats(); }
-      }
-      else if (msg.type === 'UPDATE_DEVICE_RESULT') {
-        if (msg.ok) flagSaved(msg.deviceId); else flagError(msg.deviceId, msg.error || 'Hata');
-      }
-      else if (msg.type === 'DEVICE_MSG_COUNTS') {
-        for (const [id, c] of Object.entries(msg.counts)) {
-          const devId = parseInt(id, 10);
-          deviceMsgCounts.set(devId, c);
-          const msgEl = document.getElementById(`dev-msgs-${devId}`);
-          if (msgEl) { msgEl.textContent = c; msgEl.style.display = c > 0 ? '' : 'none'; }
-        }
-        if (msg.abletonTotal) abletonTotal = msg.abletonTotal;
-        elAbletonTotal.textContent = abletonTotal;
-      }
-      else if (msg.type === 'DISCOVERED_DEVICES') {
-        renderDiscovered(msg.devices || []);
-      }
-      else if (msg.type === 'M4L_FEEDBACK') {
-        const { deviceId, path, value } = msg;
-        m4lFeedback.set(deviceId, { path, value, ts: Date.now() });
-        flashM4L(deviceId, path, value);
-      }
-    };
-  }
-
-  function flashM4L(deviceId, path, value) {
-    const dot   = document.getElementById(`m4l-dot-${deviceId}`);
-    const label = document.getElementById(`m4l-label-${deviceId}`);
-    const pathEl= document.getElementById(`m4l-path-${deviceId}`);
-    const valEl = document.getElementById(`m4l-val-${deviceId}`);
-    if (!dot) return;
-    const fmt = typeof value === 'number' ? value.toFixed(3) : String(value);
-    if (pathEl) pathEl.textContent = path;
-    if (valEl)  valEl.textContent  = fmt;
-    dot.classList.remove('active'); label.classList.remove('active');
-    void dot.offsetWidth;
-    dot.classList.add('active'); label.classList.add('active');
-    clearTimeout(dot._ft);
-    dot._ft = setTimeout(() => { dot.classList.remove('active'); label.classList.remove('active'); }, 2000);
-  }
-
-  function restoreM4LStrips() {
-    for (const [devId, fb] of m4lFeedback.entries()) {
-      if (Date.now() - fb.ts < 2000) flashM4L(devId, fb.path, fb.value);
-    }
-  }
-
-  function renderDiscovered(list) {
-    elDiscoveredHeader.style.display = list.length > 0 ? '' : 'none';
-    elDiscovered.innerHTML = '';
-    for (const dev of list) {
-      const card = document.createElement('div');
-      card.className = 'discovered-card';
-      card.innerHTML = `
-        <div class="discovered-tag">Keşfedildi</div>
-        <div class="discovered-name">
-          <div class="discovered-pulse"></div>
-          <span></span>
+        <div class="card-addr">
+          <span class="addr-icon">⬡</span>
+          <span class="addr-host editable" data-field="host">${esc(dev.host)}</span>
+          <span class="addr-sep">:</span>
+          <span class="addr-port editable" data-field="oscQueryPort">${esc(String(dev.oscQueryPort))}</span>
         </div>
-        <div class="discovered-host"></div>
-        <input class="discovered-name-input" type="text" placeholder="Cihaz adı…">
-        <div style="display:flex; gap:0.5rem">
-          <button class="btn" onclick="showAddForm(this)">+ Ekle</button>
-          <button class="btn primary" style="display:none"
-                  data-host="" data-port="${dev.port}"
-                  onclick="addDiscoveredFromBtn(this, this.closest('.discovered-card').querySelector('.discovered-name-input').value)">
-            Onayla
+
+        <div class="card-metrics">
+          <div class="metric">
+            <div class="metric-val">${paramCount || '—'}</div>
+            <div class="metric-key">Params</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val" id="dev-msgs-${dev.id}">${msgCount || '—'}</div>
+            <div class="metric-key">Msgs</div>
+          </div>
+          <div class="metric metric-wave">
+            <canvas class="wave-cvs" id="wave-${dev.id}" width="80" height="22"></canvas>
+            <div class="metric-key">Signal</div>
+          </div>
+        </div>
+
+        <div class="m4l-strip" id="m4l-strip-${dev.id}">
+          <div class="m4l-dot"   id="m4l-dot-${dev.id}"></div>
+          <span class="m4l-label" id="m4l-label-${dev.id}">◄ M4L</span>
+          <span class="m4l-path"  id="m4l-path-${dev.id}"></span>
+          <span class="m4l-val"   id="m4l-val-${dev.id}"></span>
+        </div>
+
+        <div class="device-params-bar">
+          <button id="params-toggle-${dev.id}"
+                  class="params-btn${isExpanded ? ' open' : ''}"
+                  onclick="toggleDeviceParams(${dev.id})">
+            <span style="display:flex;align-items:center;gap:0.4rem">
+              <span class="arrow">${isExpanded ? '▴' : '▾'}</span>
+              Parameters
+            </span>
+            <span id="params-count-${dev.id}" class="param-count">${paramCount}</span>
+          </button>
+          <div id="params-list-${dev.id}" class="device-params-list${isExpanded ? ' open' : ''}"></div>
+        </div>
+
+        <div class="card-actions">
+          <button class="sig-btn ${dev.enabled ? 'enabled-btn' : ''}" data-action="toggle">
+            ${dev.enabled ? '● Enabled' : '○ Enable'}
+          </button>
+          <button class="sig-btn" data-action="reconnect" ${!dev.enabled ? 'disabled' : ''}>
+            ⟳ Reconnect
           </button>
         </div>
-      `;
-      card.querySelector('.discovered-name span').textContent = dev.name;
-      card.querySelector('.discovered-host').textContent      = `${dev.host} : ${dev.port}`;
-      card.querySelector('.discovered-name-input').value      = dev.name;
-      card.querySelector('[data-host]').dataset.host          = dev.host;
-      elDiscovered.appendChild(card);
+        <div class="save-hint"></div>
+      </div>
+    `;
+
+    attachEditable(card.querySelector('[data-field="name"]'),         dev.id, 'name',         s => s.length > 0);
+    attachEditable(card.querySelector('[data-field="host"]'),         dev.id, 'host',         isValidIp);
+    attachEditable(card.querySelector('[data-field="oscQueryPort"]'), dev.id, 'oscQueryPort', isValidPort);
+
+    card.querySelector('[data-action="toggle"]').onclick    = () => { sendUpdateDevice(dev.id, { enabled: !dev.enabled }); flagSaving(dev.id); };
+    card.querySelector('[data-action="reconnect"]').onclick = () => { sendReconnect(dev.id); showHint(dev.id, 'Reconnecting…', ''); };
+
+    elDevices.appendChild(card);
+
+    if (isExpanded) {
+      const list = document.getElementById(`params-list-${dev.id}`);
+      const dp   = deviceParams.get(dev.id);
+      if (list && dp) for (const [path, data] of dp.entries()) upsertParamRow(list, dev.id, path, data);
     }
   }
+  restoreM4LStrips();
+}
 
-  function addDiscovered(host, port, name) {
-    if (ws && ws.readyState === WebSocket.OPEN)
-      ws.send(JSON.stringify({ type: 'ADD_DISCOVERED', host, port, name: name.trim() || undefined }));
+function processInitialState(tree) {
+  function walk(node, path) {
+    if (node.TYPE !== undefined)
+      processParam(path, { paramType: node.TYPE, value: node.VALUE, deviceName: inferDeviceName(path) });
+    if (node.CONTENTS)
+      for (const [k, child] of Object.entries(node.CONTENTS)) walk(child, path + '/' + k);
+  }
+  walk(tree, '');
+  updateStats();
+}
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}`);
+  ws.onopen  = () => setStatus(true, 'Connected');
+  ws.onclose = () => { setStatus(false, 'Connection lost — retrying…'); setTimeout(connect, 1500); };
+  ws.onerror = () => setStatus(false, 'Error');
+
+  ws.onmessage = ({ data: raw }) => {
+    const msg = JSON.parse(raw);
+    if (msg.type === 'INITIAL_STATE') {
+      if (msg.devices) { for (const d of msg.devices) devices.set(d.id, d); renderDevices(); }
+      if (msg.discoveredDevices) renderDiscovered(msg.discoveredDevices);
+      processInitialState(msg.namespace);
+      updateStats();
+    }
+    else if (msg.type === 'PATH_CHANGED') {
+      processParam(msg.path, msg);
+      msgsThisSecond++;
+      updateStats();
+    }
+    else if (msg.type === 'DEVICES_RELOADED') {
+      if (msg.devices) {
+        const newIds = new Set(msg.devices.map(d => d.id));
+        for (const id of [...devices.keys()]) {
+          if (!newIds.has(id)) {
+            deviceParams.delete(id);
+            deviceMsgCounts.delete(id);
+            expandedDevices.delete(id);
+            m4lFeedback.delete(id);
+          }
+        }
+        devices.clear();
+        for (const d of msg.devices) devices.set(d.id, d);
+      }
+      renderDevices(); updateStats();
+    }
+    else if (msg.type === 'DEVICE_UPDATED') {
+      if (msg.device) { devices.set(msg.device.id, msg.device); renderDevices(); updateStats(); }
+    }
+    else if (msg.type === 'UPDATE_DEVICE_RESULT') {
+      if (msg.ok) flagSaved(msg.deviceId); else flagError(msg.deviceId, msg.error || 'Error');
+    }
+    else if (msg.type === 'DEVICE_MSG_COUNTS') {
+      for (const [id, c] of Object.entries(msg.counts)) {
+        const devId = parseInt(id, 10);
+        deviceMsgCounts.set(devId, c);
+        const msgEl = document.getElementById(`dev-msgs-${devId}`);
+        if (msgEl) { msgEl.textContent = c > 0 ? c : '—'; }
+      }
+      if (msg.abletonTotal) abletonTotal = msg.abletonTotal;
+      elAbletonTotal.textContent = abletonTotal;
+    }
+    else if (msg.type === 'DISCOVERED_DEVICES') {
+      renderDiscovered(msg.devices || []);
+    }
+    else if (msg.type === 'M4L_FEEDBACK') {
+      const { deviceId, path, value } = msg;
+      m4lFeedback.set(deviceId, { path, value, ts: Date.now() });
+      flashM4L(deviceId, path, value);
+    }
+  };
+}
+
+function flashM4L(deviceId, path, value) {
+  const dot   = document.getElementById(`m4l-dot-${deviceId}`);
+  const label = document.getElementById(`m4l-label-${deviceId}`);
+  const pathEl= document.getElementById(`m4l-path-${deviceId}`);
+  const valEl = document.getElementById(`m4l-val-${deviceId}`);
+  if (!dot) return;
+  const fmt = typeof value === 'number' ? value.toFixed(3) : String(value);
+  if (pathEl) pathEl.textContent = path;
+  if (valEl)  valEl.textContent  = fmt;
+  dot.classList.remove('active'); label.classList.remove('active');
+  void dot.offsetWidth;
+  dot.classList.add('active'); label.classList.add('active');
+  clearTimeout(dot._ft);
+  dot._ft = setTimeout(() => { dot.classList.remove('active'); label.classList.remove('active'); }, 2000);
+}
+
+function restoreM4LStrips() {
+  for (const [devId, fb] of m4lFeedback.entries()) {
+    if (Date.now() - fb.ts < 2000) flashM4L(devId, fb.path, fb.value);
+  }
+}
+
+function renderDiscovered(list) {
+  elDiscoveredHeader.style.display = list.length > 0 ? '' : 'none';
+  elDiscovered.innerHTML = '';
+  for (const dev of list) {
+    const card = document.createElement('div');
+    card.className = 'discovered-card';
+    card.innerHTML = `
+      <div class="discovered-tag">Discovered</div>
+      <div class="discovered-name">
+        <div class="discovered-pulse"></div>
+        <span></span>
+      </div>
+      <div class="discovered-host"></div>
+      <input class="discovered-name-input" type="text" placeholder="Device name…">
+      <div style="display:flex; gap:0.5rem">
+        <button class="btn" onclick="showAddForm(this)">+ Add</button>
+        <button class="btn primary" style="display:none"
+                data-host="" data-port="${dev.port}"
+                onclick="addDiscoveredFromBtn(this, this.closest('.discovered-card').querySelector('.discovered-name-input').value)">
+          Confirm
+        </button>
+      </div>
+    `;
+    card.querySelector('.discovered-name span').textContent = dev.name;
+    card.querySelector('.discovered-host').textContent      = `${dev.host} : ${dev.port}`;
+    card.querySelector('.discovered-name-input').value      = dev.name;
+    card.querySelector('[data-host]').dataset.host          = dev.host;
+    elDiscovered.appendChild(card);
+  }
+}
+
+function addDiscovered(host, port, name) {
+  if (ws && ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: 'ADD_DISCOVERED', host, port, name: name.trim() || undefined }));
+}
+
+connect();
+</script>
+
+<!-- Ambient generative background — flow-field + mouse attractor -->
+<script src="algo-art.js"
+        data-particles="70"
+        data-opacity="0.55"
+        data-hue="170"
+        data-attract="0.35"
+        data-fade="0.08"
+        defer></script>
+
+<script>
+// ── SINE WAVE VISUALIZER ────────────────────────────────────────
+function drawWave(devId) {
+  const cvs = document.getElementById(`wave-${devId}`);
+  if (!cvs) return;
+  const c2  = cvs.getContext('2d');
+  const W   = cvs.width, H = cvs.height;
+  const dev = devices.get(devId);
+  const paramCount = deviceParams.get(devId)?.size || 0;
+  const msgCount   = Math.min(deviceMsgCounts.get(devId) || 0, 200);
+  const isLive     = dev?.status === 'connected' && dev?.enabled;
+
+  c2.clearRect(0, 0, W, H);
+
+  if (!isLive && paramCount === 0) {
+    c2.strokeStyle = 'rgba(0,245,212,0.1)';
+    c2.lineWidth = 1;
+    c2.beginPath(); c2.moveTo(0, H / 2); c2.lineTo(W, H / 2); c2.stroke();
+    return;
   }
 
-  connect();
+  // Frequency: more params → denser oscillation (0.06–0.32 rad/px)
+  const freq  = 0.06 + Math.min(paramCount / 60, 1) * 0.26;
+  // Amplitude: more messages → taller wave (1.5–9px)
+  const amp   = isLive ? (1.5 + Math.min(msgCount / 80, 1) * 7.5) : 1.5;
+  // Speed: param count drives animation speed
+  const speed = 0.6 + Math.min(paramCount / 40, 1) * 1.8;
+  const phase = (performance.now() / 1000) * speed;
+  const alpha = isLive ? 0.9 : 0.3;
+
+  c2.strokeStyle = isLive ? `rgba(0,245,212,${alpha})` : 'rgba(0,245,212,0.22)';
+  c2.lineWidth   = isLive ? 1.5 : 1;
+  c2.shadowBlur  = isLive ? 5 : 0;
+  c2.shadowColor = 'rgba(0,245,212,0.6)';
+  c2.beginPath();
+  for (let x = 0; x <= W; x++) {
+    const y = H / 2 + Math.sin(x * freq + phase) * amp;
+    x === 0 ? c2.moveTo(x, y) : c2.lineTo(x, y);
+  }
+  c2.stroke();
+  c2.shadowBlur = 0;
+
+  // Glow fill below wave for live devices
+  if (isLive) {
+    const grad = c2.createLinearGradient(0, H / 2 - amp, 0, H);
+    grad.addColorStop(0, 'rgba(0,245,212,0.1)');
+    grad.addColorStop(1, 'rgba(0,245,212,0)');
+    c2.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const y = H / 2 + Math.sin(x * freq + phase) * amp;
+      x === 0 ? c2.moveTo(x, y) : c2.lineTo(x, y);
+    }
+    c2.lineTo(W, H); c2.lineTo(0, H); c2.closePath();
+    c2.fillStyle = grad;
+    c2.fill();
+  }
+}
+
+function waveLoop() {
+  requestAnimationFrame(waveLoop);
+  for (const devId of devices.keys()) drawWave(devId);
+}
+waveLoop();
 </script>
 </body>
 </html>
