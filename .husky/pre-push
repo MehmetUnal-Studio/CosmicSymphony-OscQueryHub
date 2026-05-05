@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# pre-push hook
+# Deeper AI review of all commits not yet on origin.
+# Only analyzes the diff — never re-sends unchanged code.
+
+# AI code review — only analyzes commits about to be pushed.
+# Override the base branch with: AI_REVIEW_BASE=origin/dev git push
+node scripts/validate-push.js

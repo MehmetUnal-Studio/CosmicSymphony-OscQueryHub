@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# pre-commit hook
+# 1. Format + lint staged files (lint-staged)
+# 2. AI review of staged diff (validate-staged.js)
+
+# Run lint-staged (prettier formatting on staged files only)
+npx lint-staged
+
+# AI code review — only analyzes staged diff, never the full codebase.
+# Requires ANTHROPIC_API_KEY in environment.
+# Set AI_REVIEW_VERBOSE=1 for per-file detail.
+node scripts/validate-staged.js

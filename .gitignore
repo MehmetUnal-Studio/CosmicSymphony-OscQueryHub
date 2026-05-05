@@ -3,3 +3,9 @@ dist/
 .DS_Store
 *.log
 .env
+
+# AI review cache (local only — contains code snippets)
+.ai-review-cache.json
+
+# Local Claude Code config / skills
+.claude/

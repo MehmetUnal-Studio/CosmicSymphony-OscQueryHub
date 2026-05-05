@@ -4,7 +4,22 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "test-device": "tsx src/test-device.ts",
+    "prepare": "husky",
+    "format": "prettier --write \"**/*.{ts,js,json,md}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,js,json,md}\" --ignore-path .gitignore",
+    "ai:review:staged": "node scripts/validate-staged.js --verbose",
+    "ai:review:push": "node scripts/validate-push.js --verbose",
+    "ai:cache:clear": "node -e \"import('fs').then(fs => fs.writeFileSync('.ai-review-cache.json', '{}'))\""
+  },
+  "lint-staged": {
+    "*.{ts,js}": [
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
   },
   "keywords": [],
   "author": "",
@@ -17,9 +32,13 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.92.0",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
     "@types/ws": "^8.18.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   },

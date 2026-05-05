@@ -1,0 +1,131 @@
+{
+  "_comment": "Central rule file for AI code validation. Edit this to customize review behavior.",
+  "_version": "1.0",
+
+  "model": "claude-haiku-4-5-20251001",
+  "cacheValidityHours": 168,
+
+  "project": {
+    "name": "OSCQuery Hub",
+    "language": "TypeScript / Node.js",
+    "runtime": "Node.js 20+",
+    "framework": "Express 5 + WebSocket (ws)",
+    "description": "OSC device hub — bridges OSC instruments with Ableton Live via OSCQuery protocol"
+  },
+
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    ".next/**",
+    "coverage/**",
+    "**/*.lock",
+    "**/*.amxd",
+    "**/*.maxpat",
+    "logs/**",
+    ".ai-review-cache.json"
+  ],
+
+  "security": {
+    "severity": "blocking",
+    "rules": [
+      "Never use innerHTML or outerHTML with server-sourced or network-sourced data — use textContent or DOM APIs",
+      "Always validate host strings before making outbound HTTP/WebSocket connections (no SSRF)",
+      "Never set Access-Control-Allow-Origin to '*' on routes that modify state",
+      "Never expose stack traces or internal paths in HTTP responses",
+      "Never log or transmit private keys, tokens, or passwords",
+      "Validate all WebSocket message types and fields before acting on them",
+      "Never accept unvalidated file paths from user input for file system operations",
+      "All UDP sockets that receive data from localhost only should bind to 127.0.0.1, not 0.0.0.0"
+    ]
+  },
+
+  "naming": {
+    "severity": "warning",
+    "rules": [
+      "TypeScript files: camelCase for variables and functions, PascalCase for interfaces and types",
+      "Constants that are truly fixed: SCREAMING_SNAKE_CASE (e.g. HTTP_PORT, MAX_SUBSCRIBERS)",
+      "OSC path constants: kebab-case or snake_case matching the OSC spec",
+      "File names: kebab-case (e.g. osc-utils.ts, diff-utils.js)",
+      "Manifest JSON files: <type>_<id>.json (e.g. tablet_01.json)"
+    ]
+  },
+
+  "architecture": {
+    "severity": "warning",
+    "rules": [
+      "Do not add synchronous blocking I/O (readFileSync, writeFileSync) in hot request paths",
+      "New device types must be introduced via a manifest file in manifests/, not hardcoded in src/",
+      "WebSocket message handlers must validate msg.type before switching on it",
+      "HTTP routes that modify state must check input validity before writing to disk",
+      "Do not import from src/ inside scripts/ — keep validation scripts self-contained",
+      "The namespace Map must not grow unbounded — apply MAX_NAMESPACE guard on all writes"
+    ]
+  },
+
+  "dependencies": {
+    "severity": "blocking",
+    "rules": [
+      "Do not add new runtime dependencies without updating package.json",
+      "Do not import from node_modules paths directly — always use the package name",
+      "Do not use require() in .ts files — use ES module import syntax",
+      "The osc, express, ws, bonjour-service packages are the only allowed runtime deps for src/"
+    ]
+  },
+
+  "compatibility": {
+    "severity": "warning",
+    "rules": [
+      "Target Node.js 20+. Do not use APIs deprecated before Node 20.",
+      "UDP OSC parsing must handle both Buffer and Uint8Array inputs from the osc library",
+      "WebSocket message payloads must stay under 65536 bytes (enforced in server config)"
+    ]
+  },
+
+  "performance": {
+    "severity": "warning",
+    "rules": [
+      "Do not call JSON.stringify on large objects inside setInterval callbacks",
+      "broadcastToClients() iterates all WS clients — avoid calling it more than once per event",
+      "Avoid synchronous fs operations (readFileSync/writeFileSync) in WebSocket message handlers",
+      "Do not create new RegExp objects from user-controlled strings in hot paths"
+    ]
+  },
+
+  "forbiddenPatterns": {
+    "severity": "blocking",
+    "patterns": [
+      {
+        "pattern": "innerHTML\\s*=\\s*`[^`]*\\$\\{",
+        "message": "Template literal with dynamic content assigned to innerHTML — XSS risk",
+        "fix": "Use textContent or a DOM builder (createElement + textContent)"
+      },
+      {
+        "pattern": "eval\\s*\\(",
+        "message": "eval() is forbidden",
+        "fix": "Use a safer alternative (JSON.parse, Function, dynamic import)"
+      },
+      {
+        "pattern": "Access-Control-Allow-Origin.*\\*",
+        "message": "Wildcard CORS on a state-modifying route",
+        "fix": "Restrict to specific origins: http://localhost:<port>"
+      },
+      {
+        "pattern": "process\\.env\\.\\w+\\s*\\|\\|\\s*['\"][^'\"]{8,}['\"]",
+        "message": "Hardcoded fallback secret in environment variable access",
+        "fix": "Remove the hardcoded default — fail loudly if the env var is missing"
+      },
+      {
+        "pattern": "execSync\\(.*\\$\\{",
+        "message": "Template literal in execSync — potential command injection",
+        "fix": "Use execFileSync with a fixed command array and validated arguments"
+      }
+    ]
+  },
+
+  "outputFormat": {
+    "statuses": ["PASS", "WARNING", "BLOCKING"],
+    "exitOnBlocking": true,
+    "showCacheHits": true
+  }
+}
