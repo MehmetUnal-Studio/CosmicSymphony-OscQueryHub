@@ -37,14 +37,22 @@ Replaces the legacy Max/MSP Standalone Manager.
 ### Hub backend
 - **JSON UDP listener (port 5007)** — Send a JSON object from Max via `dict.serialize` → `udpsend 127.0.0.1 5007`. The `_device` field maps to a card; remaining keys are auto-written to the namespace.
 - **`permanent` flag** — Devices with `"permanent": true` (Tablet1-3, TV, VR, Ring, LeapMotion) stay pinned in the panel regardless of connection state.
-- **Bug fixes** — NaN guards, WebSocket `error` cleanup, `deviceMsgCount` cleanup on manifest deletion, missing `Parameter` fields.
-- **Test device emulator** — `npm run test-device` spins up a mock OSCQuery device.
+- **Delete device** — Each card has an `✕` button. Confirmation dialog → manifest file deleted, namespace entries cleared, active connection torn down. Real, irreversible delete.
+- **State preservation across manifest reloads** — Earlier, every `manifests/` change reset `status`/`paramCount` to `configured`/undefined, so connected cards looked dead. Fixed: if `host`/`port`/`enabled` unchanged and the OSCQuery client is still active, runtime fields are carried over.
+- **Bug fixes** — NaN guards on JSON UDP, WebSocket `error` cleanup, `deviceMsgCount` cleanup on manifest deletion, complete `Parameter` shape (fullPath, lastUpdate).
 
 ### Web UI
 - **Full English locale** — locale-consistent for live/stage use (`<html lang="en">`).
 - **Modern typography** — Inter (sans) + JetBrains Mono (mono), `tabular-nums` numeric columns.
 - **Brightened offline cards** — the old `opacity: 0.45` made them invisible; now text is readable, OFFLINE badge is red, Enable button is cyan and clickable.
+- **Per-card delete** — third action button (`✕`); destructive style on hover (red glow), `confirm()` dialog before fire.
 - **Generative background** — `algo-art.js` ambient flow-field + mouse halo; respects `prefers-reduced-motion`, pauses on tab hide.
+
+### Test instrument (`osc-test-instrument/`)
+- **Standalone Express + WS server** on port 9100 (`npm start` inside `osc-test-instrument/`).
+- **Cosmic XY pad UI** — full-screen WebGL nebula (three.js); mouse position drives `/x` and `/y` (0..1), clicks emit pulse rings. The mouse cursor IS the instrument.
+- **Browser/subscriber separation** — UI clients announce `HELLO_BROWSER`; OSCQuery clients (the hub) issue `LISTEN`. Initial value pushed on subscribe so the hub gets the current state immediately.
+- **Auto-discovery** — Bonjour-publishes `_oscjson._tcp`; the hub picks it up automatically.
 
 ### Development workflow
 - **AI-assisted code review** — Husky pre-commit/pre-push hooks run every staged diff through the Anthropic API (details below).
@@ -286,6 +294,11 @@ oscquery-hub/
 │   ├── index.html            ← Web control panel
 │   ├── algo-art.js           ← Ambient generative background (drop-in)
 │   └── test-device.html      ← Companion page for the test device
+├── osc-test-instrument/      ← Standalone test instrument (separate process)
+│   ├── server.js                 ← Express + WS OSCQuery server (port 9100)
+│   ├── public/
+│   │   └── index.html            ← Cosmic WebGL XY pad UI
+│   └── package.json
 ├── scripts/                  ← AI review tooling
 │   ├── ai-review.js              ← Anthropic API call + prompts
 │   ├── validate-staged.js        ← Pre-commit hook entry
