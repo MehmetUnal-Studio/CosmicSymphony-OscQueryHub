@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WebInstrument — Cosmic XY Pad</title>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #04060c;
+    overflow: hidden;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #e6edf5;
+    -webkit-font-smoothing: antialiased;
+    cursor: crosshair;
+  }
+
+  /* The cosmic WebGL canvas fills the screen and IS the XY pad */
+  #cosmic-bg {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;   /* mousemove still tracked at window level */
+    display: block;
+    background: #04060c;
+  }
+
+  /* Floating HUD — connection status + live x/y values */
+  .hud {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    background: rgba(8, 12, 22, 0.65);
+    backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 11px;
+    line-height: 1.55;
+    user-select: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .hud .title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 6px;
+  }
+  .hud .row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+  }
+  .hud .label { color: rgba(255, 255, 255, 0.5); min-width: 14px; }
+  .hud .val   { color: #ffd28a; font-variant-numeric: tabular-nums; min-width: 56px; }
+  .hud .status {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: rgba(255, 255, 255, 0.4);
+  }
+  .hud .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #ff5a5a;
+    transition: background 200ms, box-shadow 200ms;
+  }
+  .hud.connected .dot {
+    background: #6bcf7f;
+    box-shadow: 0 0 8px #6bcf7f, 0 0 16px rgba(107, 207, 127, 0.4);
+  }
+  .hud.connected .status { color: #6bcf7f; }
+
+  .hud .hub-info {
+    margin-top: 4px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Hint at bottom */
+  .hint {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: rgba(255, 255, 255, 0.25);
+    user-select: none;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="cosmic-bg"></canvas>
+
+<div class="hud" id="hud">
+  <div class="title">WebInstrument</div>
+  <div class="row"><span class="label">x:</span><span class="val" id="vx">0.500</span></div>
+  <div class="row"><span class="label">y:</span><span class="val" id="vy">0.500</span></div>
+  <div class="status"><span class="dot"></span><span id="conn-text">Connecting…</span></div>
+  <div class="hub-info" id="hub-info">Hub subscribers: 0</div>
+</div>
+
+<div class="hint">Move mouse · click for pulse</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- ============================================================
+     OSCQuery WS bridge — sends /x and /y to the device's own server
+     ============================================================ -->
+<script>
+(function () {
+  'use strict';
+
+  const wsUrl = `ws://${location.host}`;
+  let ws = null;
+
+  // Latest mouse-derived values, set every mousemove, flushed on RAF
+  let pendingX = 0.5;
+  let pendingY = 0.5;
+  let lastSentX = -1;
+  let lastSentY = -1;
+  let dirty = false;
+
+  // UI refs
+  const hud      = document.getElementById('hud');
+  const elVX     = document.getElementById('vx');
+  const elVY     = document.getElementById('vy');
+  const elConn   = document.getElementById('conn-text');
+  const elHub    = document.getElementById('hub-info');
+
+  function setConnected(on, txt) {
+    hud.classList.toggle('connected', !!on);
+    elConn.textContent = txt || (on ? 'Connected' : 'Disconnected');
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+
+  function connect() {
+    setConnected(false, 'Connecting…');
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      setConnected(true);
+      send({ type: 'HELLO_BROWSER' });
+    };
+    ws.onclose = () => {
+      setConnected(false, 'Reconnecting…');
+      setTimeout(connect, 1500);
+    };
+    ws.onerror = () => { /* let onclose retry */ };
+
+    ws.onmessage = ({ data }) => {
+      let msg; try { msg = JSON.parse(data); } catch { return; }
+      if (msg.type === 'STATE') {
+        // initial values from server
+        if (msg.values && '/x' in msg.values) {
+          pendingX = msg.values['/x']; lastSentX = pendingX;
+          elVX.textContent = pendingX.toFixed(3);
+        }
+        if (msg.values && '/y' in msg.values) {
+          pendingY = msg.values['/y']; lastSentY = pendingY;
+          elVY.textContent = pendingY.toFixed(3);
+        }
+      } else if (msg.type === 'VALUE') {
+        // value changed (e.g. by hub subscriber or another browser)
+        if (msg.path === '/x') { elVX.textContent = (+msg.value).toFixed(3); }
+        if (msg.path === '/y') { elVY.textContent = (+msg.value).toFixed(3); }
+      } else if (msg.type === 'CLIENTS') {
+        elHub.textContent = `Hub subscribers: ${msg.subscribers}`;
+      }
+    };
+  }
+  connect();
+
+  // Mouse → /x and /y (0..1, with y flipped so up = 1)
+  window.addEventListener('mousemove', (e) => {
+    pendingX = Math.min(1, Math.max(0, e.clientX / window.innerWidth));
+    pendingY = Math.min(1, Math.max(0, 1 - e.clientY / window.innerHeight));
+    dirty = true;
+  });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!e.touches[0]) return;
+    pendingX = Math.min(1, Math.max(0, e.touches[0].clientX / window.innerWidth));
+    pendingY = Math.min(1, Math.max(0, 1 - e.touches[0].clientY / window.innerHeight));
+    dirty = true;
+  }, { passive: true });
+
+  // Throttled flush — at most once per RAF, only if value actually changed
+  function flush() {
+    requestAnimationFrame(flush);
+    if (!dirty) return;
+    if (Math.abs(pendingX - lastSentX) > 0.0005) {
+      send({ type: 'SET', path: '/x', value: pendingX });
+      lastSentX = pendingX;
+      elVX.textContent = pendingX.toFixed(3);
+    }
+    if (Math.abs(pendingY - lastSentY) > 0.0005) {
+      send({ type: 'SET', path: '/y', value: pendingY });
+      lastSentY = pendingY;
+      elVY.textContent = pendingY.toFixed(3);
+    }
+    dirty = false;
+  }
+  flush();
+})();
+</script>
+
+<!-- ============================================================
+     Cosmic WebGL background — drives visuals from mouse position.
+     Mouse coords feed both the OSC stream AND the shader uniforms.
+     ============================================================ -->
+<script>
+(function () {
+  'use strict';
+
+  const canvas = document.getElementById('cosmic-bg');
+  if (!canvas) return;
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas: canvas,
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x04060c, 1);
+
+  const bgScene  = new THREE.Scene();
+  const bgCamera = new THREE.Camera();
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    55, window.innerWidth / window.innerHeight, 0.1, 4000
+  );
+  camera.position.set(0, 0, 320);
+
+  /* Mouse state */
+  const mouse = {
+    x: 0, y: 0,
+    sx: 0, sy: 0,
+    vx: 0, vy: 0,
+    hot: 0,
+    pulses: []
+  };
+
+  function setMouseFromEvent(clientX, clientY) {
+    const nx =  (clientX / window.innerWidth)  * 2 - 1;
+    const ny = -((clientY / window.innerHeight) * 2 - 1);
+    mouse.vx = nx - mouse.x;
+    mouse.vy = ny - mouse.y;
+    mouse.x = nx;
+    mouse.y = ny;
+    const sp = Math.min(1.0, Math.sqrt(mouse.vx * mouse.vx + mouse.vy * mouse.vy) * 14);
+    mouse.hot = Math.min(1.4, mouse.hot + sp * 0.6);
+  }
+
+  window.addEventListener('mousemove', (e) => {
+    setMouseFromEvent(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousedown', (e) => {
+    const nx =  (e.clientX / window.innerWidth)  * 2 - 1;
+    const ny = -((e.clientY / window.innerHeight) * 2 - 1);
+    mouse.pulses.push({ start: clock.getElapsedTime(), x: nx, y: ny });
+    if (mouse.pulses.length > 4) mouse.pulses.shift();
+  });
+  window.addEventListener('touchmove', (e) => {
+    if (!e.touches[0]) return;
+    setMouseFromEvent(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  window.addEventListener('touchstart', (e) => {
+    if (!e.touches[0]) return;
+    const nx =  (e.touches[0].clientX / window.innerWidth)  * 2 - 1;
+    const ny = -((e.touches[0].clientY / window.innerHeight) * 2 - 1);
+    mouse.pulses.push({ start: clock.getElapsedTime(), x: nx, y: ny });
+    if (mouse.pulses.length > 4) mouse.pulses.shift();
+  }, { passive: true });
+
+  /* ────────────── 1) full-screen cosmic shader backdrop ────────────── */
+  const bgUniforms = {
+    uTime:   { value: 0 },
+    uRes:    { value: new THREE.Vector2(1, 1) },
+    uMouse:  { value: new THREE.Vector2(0, 0) },
+    uHot:    { value: 0 },
+    uPulses: {
+      value: [
+        new THREE.Vector3(-99, -99, -99),
+        new THREE.Vector3(-99, -99, -99),
+        new THREE.Vector3(-99, -99, -99),
+        new THREE.Vector3(-99, -99, -99)
+      ]
+    }
+  };
+
+  const bgMat = new THREE.ShaderMaterial({
+    uniforms: bgUniforms,
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.999, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+      uniform float uTime;
+      uniform vec2  uRes;
+      uniform vec2  uMouse;
+      uniform float uHot;
+      uniform vec3  uPulses[4];
+
+      float hash(vec2 p){
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+      float vnoise(vec2 p){
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f*f*(3.0 - 2.0*f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+      }
+      float fbm(vec2 p){
+        float v = 0.0;
+        float a = 0.5;
+        mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+        for(int i = 0; i < 6; i++){
+          v += a * vnoise(p);
+          p = m * p;
+          a *= 0.5;
+        }
+        return v;
+      }
+      float warp(vec2 p){
+        vec2 q = vec2(fbm(p), fbm(p + vec2(5.2, 1.3)));
+        vec2 r = vec2(
+          fbm(p + 4.0 * q + vec2(1.7, 9.2) + uTime * 0.05),
+          fbm(p + 4.0 * q + vec2(8.3, 2.8) + uTime * 0.04)
+        );
+        return fbm(p + 4.0 * r);
+      }
+      vec3 palette(float t){
+        vec3 a = vec3(0.5, 0.5, 0.6);
+        vec3 b = vec3(0.5, 0.5, 0.5);
+        vec3 c = vec3(1.0, 1.0, 1.0);
+        vec3 d = vec3(0.00, 0.33, 0.67);
+        return a + b * cos(6.2831 * (c * t + d));
+      }
+      float stars(vec2 uv, float density, float sharp){
+        vec2 g = floor(uv * density);
+        vec2 f = fract(uv * density);
+        float h = hash(g);
+        if(h < 0.985) return 0.0;
+        vec2 c = vec2(hash(g + 17.0), hash(g + 71.0));
+        float d = length(f - c);
+        float br = (h - 0.985) / 0.015;
+        float tw = 0.6 + 0.4 * sin(uTime * 1.6 + h * 12.0);
+        return smoothstep(sharp, 0.0, d) * br * tw;
+      }
+
+      void main(){
+        vec2 uv = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+
+        vec2 mu  = uMouse * vec2(uRes.x / uRes.y, 1.0);
+        vec2 toM = uv - mu;
+        float dM = length(toM);
+
+        vec2 p = uv * 1.8;
+        float pull = 0.6 / (0.55 + dM * 2.6);
+        p -= toM * pull * 0.35;
+        p += vec2(uTime * 0.012, uTime * 0.008);
+
+        float pulseSum = 0.0;
+        for(int i = 0; i < 4; i++){
+          vec3 P = uPulses[i];
+          if(P.z < 0.0) continue;
+          vec2 po = vec2(P.x, P.y) * vec2(uRes.x / uRes.y, 1.0);
+          float age = P.z;
+          float dist = length(uv - po);
+          float r    = age * 1.3;
+          float ring = exp(-pow((dist - r) / 0.08, 2.0));
+          float decay = max(0.0, 1.0 - age / 1.6);
+          pulseSum += ring * decay;
+        }
+
+        float n = warp(p + pulseSum * 0.6);
+
+        float n2 = fbm(p * 2.4 + n * 1.8);
+        float ridge = 1.0 - abs(n2 - 0.5) * 2.0;
+        ridge = pow(clamp(ridge, 0.0, 1.0), 2.6);
+
+        float gasMask = smoothstep(0.42, 0.78, n);
+        float hueT = n * 0.6 + uTime * 0.02 + uv.y * 0.18 + uHot * 0.06;
+        vec3 nebula = palette(hueT) * (0.35 + n * 0.7);
+        nebula = mix(nebula, vec3(0.78, 0.55, 0.28), ridge * 0.5);
+        nebula = mix(nebula, vec3(0.25, 0.55, 0.70), pow(1.0 - n, 2.4) * 0.35);
+
+        vec3 voidCol = vec3(0.012, 0.014, 0.028);
+        vec3 col = mix(voidCol, nebula, gasMask);
+        col += palette(hueT) * 0.04 * n;
+
+        float core = exp(-dM * 5.5);
+        col += vec3(1.0, 0.82, 0.55) * core * (0.45 + uHot * 0.8);
+        col += vec3(0.35, 0.18, 0.55) * exp(-dM * 1.9) * 0.12 * (0.4 + uHot);
+
+        col += vec3(0.85, 0.72, 0.55) * pulseSum * 0.75;
+
+        float dustLane = fbm(p * 1.3 + 11.0);
+        col -= gasMask * smoothstep(0.55, 0.85, dustLane) * vec3(0.05, 0.04, 0.07);
+
+        col *= mix(0.32, 0.85, smoothstep(-0.4, 0.7, n));
+
+        float bandY = uv.y * 1.4 + sin(uv.x * 1.2 + uTime * 0.05) * 0.10;
+        float band  = exp(-bandY * bandY * 5.5);
+        col += band * vec3(0.15, 0.08, 0.26) * 0.35;
+
+        col += vec3(1.0, 0.96, 0.88) * stars(uv + 4.0,        260.0, 0.045) * 1.4;
+        col += vec3(0.75, 0.88, 1.00) * stars(uv * 1.3 + 8.0, 380.0, 0.030) * 1.0;
+        col += vec3(1.0, 0.78, 0.55)  * stars(uv * 0.8 + 1.0, 170.0, 0.060) * 0.7;
+        col += vec3(1.0, 0.65, 0.85)  * stars(uv * 1.7 + 22.0,520.0, 0.022) * 0.6;
+
+        vec2 galPos = vec2(0.62, 0.32);
+        vec2 gd = uv - galPos;
+        float galDist = length(gd * vec2(1.0, 2.4));
+        float gal = exp(-galDist * 7.0);
+        col += vec3(0.85, 0.72, 0.55) * gal * 0.18;
+        col += vec3(0.35, 0.30, 0.60) * exp(-length(gd) * 2.6) * 0.05;
+
+        float ca = 0.004 + uHot * 0.006;
+        float r2 = warp(p + vec2(ca, 0.0));
+        float b2 = warp(p - vec2(ca, 0.0));
+        col.r = mix(col.r, palette(r2 * 0.6 + uTime * 0.02 + uv.y * 0.18).r * (0.55 + r2 * 0.9), 0.18);
+        col.b = mix(col.b, palette(b2 * 0.6 + uTime * 0.02 + uv.y * 0.18).b * (0.55 + b2 * 0.9), 0.18);
+
+        float g = (hash(uv * uRes.xy + uTime) - 0.5) * 0.06;
+        col += g;
+
+        float vig = smoothstep(1.25, 0.35, length(uv));
+        col *= mix(0.55, 1.0, vig);
+
+        col = col / (col + vec3(0.7));
+        col = pow(col, vec3(0.92));
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    depthWrite: false,
+    depthTest:  false
+  });
+  const bgMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
+  bgMesh.frustumCulled = false;
+  bgScene.add(bgMesh);
+
+  /* ────────────── 2) parallax star layers ────────────── */
+  function makeStarLayer(count, radius, sizeMin, sizeMax, brightness) {
+    const positions = new Float32Array(count * 3);
+    const colors    = new Float32Array(count * 3);
+    const sizes     = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const r     = radius * (0.6 + Math.random() * 0.4);
+      positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+      const tint = Math.random();
+      let cr, cg, cb;
+      if (tint < 0.7)       { cr = 1.00; cg = 0.97; cb = 0.92; }
+      else if (tint < 0.88) { cr = 1.00; cg = 0.80; cb = 0.50; }
+      else if (tint < 0.96) { cr = 0.55; cg = 0.78; cb = 1.00; }
+      else                  { cr = 1.00; cg = 0.55; cb = 0.70; }
+      const b = brightness * (0.35 + Math.random() * 0.7);
+      colors[i * 3]     = cr * b;
+      colors[i * 3 + 1] = cg * b;
+      colors[i * 3 + 2] = cb * b;
+      sizes[i] = sizeMin + Math.random() * (sizeMax - sizeMin);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
+    geo.setAttribute('size',     new THREE.BufferAttribute(sizes,     1));
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime:  { value: 0 },
+        uPixel: { value: renderer.getPixelRatio() }
+      },
+      vertexShader: `
+        attribute float size;
+        varying vec3 vColor;
+        uniform float uTime;
+        uniform float uPixel;
+        void main(){
+          vColor = color;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          float ph = fract(sin(dot(position.xy, vec2(12.9898, 78.233))) * 43758.5453);
+          float tw = 0.7 + 0.3 * sin(uTime * 1.6 + ph * 6.28);
+          gl_PointSize = size * tw * uPixel * (260.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main(){
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          float a = smoothstep(0.5, 0.0, d);
+          if(a < 0.02) discard;
+          gl_FragColor = vec4(vColor * (0.85 + a * 0.7), a);
+        }
+      `,
+      vertexColors: true,
+      transparent:  true,
+      depthWrite:   false,
+      blending:     THREE.AdditiveBlending
+    });
+    return new THREE.Points(geo, mat);
+  }
+
+  const starLayers = [
+    makeStarLayer(2400, 1700, 0.8, 1.4, 0.7),
+    makeStarLayer(1100, 900,  1.1, 2.2, 0.9),
+    makeStarLayer( 380, 480,  1.6, 3.6, 1.15)
+  ];
+  starLayers.forEach((l) => scene.add(l));
+
+  /* ────────────── 3) drifting dust ────────────── */
+  function buildDust() {
+    const N = 600;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const sz  = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3]     = (Math.random() - 0.5) * 1200;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 800;
+      pos[i * 3 + 2] = 80 + Math.random() * 380;
+      const c = Math.random();
+      if (c < 0.5)      { col[i * 3] = 1.0;  col[i * 3 + 1] = 0.85; col[i * 3 + 2] = 0.55; }
+      else if (c < 0.8) { col[i * 3] = 0.60; col[i * 3 + 1] = 0.55; col[i * 3 + 2] = 1.0;  }
+      else              { col[i * 3] = 1.0;  col[i * 3 + 1] = 0.55; col[i * 3 + 2] = 0.80; }
+      sz[i] = 1.5 + Math.random() * 3.0;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color',    new THREE.BufferAttribute(col, 3));
+    g.setAttribute('size',     new THREE.BufferAttribute(sz, 1));
+    const m = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime:  { value: 0 },
+        uPixel: { value: renderer.getPixelRatio() },
+        uMouse: { value: new THREE.Vector2(0, 0) }
+      },
+      vertexShader: `
+        attribute float size;
+        varying vec3 vColor;
+        uniform float uTime;
+        uniform float uPixel;
+        uniform vec2  uMouse;
+        void main(){
+          vColor = color;
+          vec3 p = position;
+          p.x += sin(uTime * 0.25 + p.y * 0.012) * 8.0 + uMouse.x * 14.0;
+          p.y += cos(uTime * 0.18 + p.x * 0.012) * 6.0 + uMouse.y * 10.0;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = size * uPixel * (260.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main(){
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          float a = smoothstep(0.5, 0.0, d) * 0.55;
+          if(a < 0.02) discard;
+          gl_FragColor = vec4(vColor, a);
+        }
+      `,
+      vertexColors: true,
+      transparent:  true,
+      depthWrite:   false,
+      blending:     THREE.AdditiveBlending
+    });
+    return new THREE.Points(g, m);
+  }
+  const dust = buildDust();
+  scene.add(dust);
+
+  /* ────────────── resize / pause / animate ────────────── */
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    bgUniforms.uRes.value.set(w, h);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  let running = true;
+  document.addEventListener('visibilitychange', () => {
+    running = !document.hidden;
+    if (running) {
+      clock.start();
+      requestAnimationFrame(animate);
+    }
+  });
+
+  const clock = new THREE.Clock();
+
+  function animate() {
+    if (!running) return;
+
+    const t  = clock.getElapsedTime();
+    const dt = Math.min(0.05, clock.getDelta());
+
+    mouse.sx += (mouse.x - mouse.sx) * 0.07;
+    mouse.sy += (mouse.y - mouse.sy) * 0.07;
+    mouse.hot = Math.max(0, mouse.hot - dt * 0.45);
+
+    bgUniforms.uTime.value = t;
+    bgUniforms.uMouse.value.set(mouse.sx, mouse.sy);
+    bgUniforms.uHot.value  = mouse.hot;
+
+    const pulseArr = bgUniforms.uPulses.value;
+    for (let i = 0; i < 4; i++) pulseArr[i].set(-99, -99, -99);
+    let idx = 0;
+    for (let i = mouse.pulses.length - 1; i >= 0 && idx < 4; i--, idx++) {
+      const p = mouse.pulses[i];
+      const age = t - p.start;
+      if (age > 1.6) continue;
+      pulseArr[idx].set(p.x, p.y, age);
+    }
+    mouse.pulses = mouse.pulses.filter((p) => (t - p.start) < 1.6);
+
+    camera.position.x += (mouse.sx * 28 - camera.position.x) * 0.05;
+    camera.position.y += (mouse.sy * 20 - camera.position.y) * 0.05;
+    camera.lookAt(0, 0, 0);
+
+    starLayers[0].rotation.y =  mouse.sx * 0.05;
+    starLayers[0].rotation.x = -mouse.sy * 0.05;
+    starLayers[1].rotation.y =  mouse.sx * 0.10;
+    starLayers[1].rotation.x = -mouse.sy * 0.10;
+    starLayers[2].rotation.y =  mouse.sx * 0.18;
+    starLayers[2].rotation.x = -mouse.sy * 0.18;
+    for (const l of starLayers) l.material.uniforms.uTime.value = t;
+
+    dust.material.uniforms.uTime.value = t;
+    dust.material.uniforms.uMouse.value.set(mouse.sx, mouse.sy);
+
+    renderer.autoClear = true;
+    renderer.render(bgScene, bgCamera);
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(scene, camera);
+
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+
+</body>
+</html>
