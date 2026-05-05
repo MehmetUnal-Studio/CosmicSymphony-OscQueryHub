@@ -2,8 +2,9 @@
   "id": 8,
   "name": "Ring",
   "type": "ring-controller",
-  "host": "192.168.1.108",
-  "oscQueryPort": 9010,
+  "host": "192.168.1.142",
+  "oscQueryPort": 9011,
   "enabled": false,
-  "description": "Ring dokunma sensörü"
+  "description": "Ring dokunma sensörü",
+  "permanent": true
 }

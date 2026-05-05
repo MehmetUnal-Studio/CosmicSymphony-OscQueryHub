@@ -1,9 +1,9 @@
 {
-  "id": 10,
-  "name": "MaxOSCQuery",
+  "id": 13,
+  "name": "NewDevice",
   "type": "oscquery-device",
   "host": "192.168.1.101",
-  "oscQueryPort": 8000,
-  "enabled": false,
+  "oscQueryPort": 9200,
+  "enabled": true,
   "description": "Bonjour ile keşfedildi"
 }

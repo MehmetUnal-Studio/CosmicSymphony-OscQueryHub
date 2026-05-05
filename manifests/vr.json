@@ -5,5 +5,6 @@
   "host": "192.168.1.106",
   "oscQueryPort": 9010,
   "enabled": false,
-  "description": "VR enstrüman 1"
+  "description": "VR enstrüman 1",
+  "permanent": true
 }

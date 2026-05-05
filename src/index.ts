@@ -11,6 +11,7 @@ import { OscQueryClient } from './oscquery-client.js';
 // ============ AYARLAR ============
 const HTTP_PORT = 5555;
 const OSC_PORT = 5006;
+const JSON_UDP_PORT = 5007;
 const ABLETON_HOST = '127.0.0.1';
 const ABLETON_PORT = 10000;
 const HUB_NAME = 'OSCQuery Hub';
@@ -38,6 +39,7 @@ interface DeviceManifest {
   oscQueryPort: number;
   enabled: boolean;
   description: string;
+  permanent?: boolean;
   status?: 'configured' | 'connecting' | 'connected' | 'lost' | 'disabled' | 'error';
   lastMessageAt?: number;
   paramCount?: number;
@@ -107,6 +109,11 @@ function reconcileClients(oldDevices: Map<number, DeviceManifest>) {
       client.disconnect();
       oscQueryClients.delete(id);
       console.log(`  🔌 Disconnect: ${oldDev.name}`);
+    }
+
+    // Manifest tamamen silindiyse sayaçları da temizle
+    if (!newDev) {
+      deviceMsgCount.delete(id);
     }
   }
 
@@ -239,6 +246,7 @@ function saveManifest(deviceId: number, updates: Partial<DeviceManifest>): { ok:
     oscQueryPort: updates.oscQueryPort ?? dev.oscQueryPort,
     enabled: updates.enabled ?? dev.enabled,
     description: updates.description ?? dev.description,
+    ...(dev.permanent !== undefined && { permanent: dev.permanent }),
   };
 
   try {
@@ -423,6 +431,18 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
     return;
   }
   namespace.set(oscMsg.address, param);
+
+  // Path'in ilk segmentini cihaz adıyla eşleştir → sayacı artır
+  const firstSeg = oscMsg.address.split('/').filter(Boolean)[0];
+  if (firstSeg) {
+    for (const dev of devices.values()) {
+      if (dev.name === firstSeg) {
+        deviceMsgCount.set(dev.id, (deviceMsgCount.get(dev.id) || 0) + 1);
+        dev.lastMessageAt = Date.now();
+        break;
+      }
+    }
+  }
 
   const marker = isNew ? '🆕' : '  ';
   const valStr = args.map((a: any) => `${a.value}(${a.type})`).join(', ');
@@ -628,6 +648,10 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     wsClients.delete(ws);
   });
+
+  ws.on('error', () => {
+    wsClients.delete(ws);
+  });
 });
 
 server.listen(HTTP_PORT, () => { publishBonjour(); startDiscovery(); });
@@ -703,6 +727,54 @@ feedbackSocket.bind(8889, '127.0.0.1', () => {
   console.log('  ◄ M4L geri kanal:   UDP 127.0.0.1:8889');
 });
 
+// ============ JSON UDP DİNLEYİCİ (port 5007) ============
+// Max'ten: dict.serialize → udpsend 127.0.0.1 5007
+// Format: {"_device":"ece","x":1.0,"y":2.0} — _device opsiyonel
+const jsonUdpSocket = dgram.createSocket('udp4');
+
+jsonUdpSocket.on('message', (buf) => {
+  try {
+    const raw = buf.toString('utf8').trim();
+    const data = JSON.parse(raw) as Record<string, unknown>;
+
+    const deviceName = typeof data['_device'] === 'string' ? data['_device'] : null;
+    const devId = deviceName
+      ? (() => { for (const [id, d] of devices.entries()) if (d.name === deviceName) return id; return null; })()
+      : null;
+
+    let count = 0;
+    for (const [key, val] of Object.entries(data)) {
+      if (key.startsWith('_')) continue;
+      const path = deviceName ? `/${deviceName}/${key}` : `/${key}`;
+      if (!OSC_PATH_RE.test(path)) continue;
+      if (namespace.size >= MAX_NAMESPACE) break;
+      const numVal = typeof val === 'number' ? val : parseFloat(String(val));
+      if (!Number.isFinite(numVal)) continue;
+      namespace.set(path, {
+        fullPath: path,
+        type: 'f',
+        value: [numVal],
+        lastUpdate: Date.now(),
+        source: deviceName ?? 'json-udp'
+      });
+      broadcastToClients({ type: 'PATH_CHANGED', path, paramType: 'f', value: [numVal], deviceName });
+      count++;
+    }
+
+    if (devId !== null) {
+      deviceMsgCount.set(devId, (deviceMsgCount.get(devId) || 0) + count);
+      const dev = devices.get(devId);
+      if (dev) dev.lastMessageAt = Date.now();
+    }
+  } catch {
+    // JSON parse hatası — sessizce geç
+  }
+});
+
+jsonUdpSocket.bind(JSON_UDP_PORT, '0.0.0.0', () => {
+  console.log(`  ◄ JSON UDP:         port ${JSON_UDP_PORT}`);
+});
+
 // Periyodik olarak msg count'u tarayıcıya gönder
 setInterval(() => {
   if (deviceMsgCount.size === 0) return;
@@ -718,6 +790,7 @@ process.on('SIGINT', () => {
     bonjour.destroy();
     udpPort.close();
     feedbackSocket.close();
+    jsonUdpSocket.close();
     for (const client of wsClients) client.close();
     process.exit(0);
   });

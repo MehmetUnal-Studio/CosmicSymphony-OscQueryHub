@@ -4,6 +4,7 @@
   "type": "hand-tracker",
   "host": "127.0.0.1",
   "oscQueryPort": 9012,
-  "enabled": true,
-  "description": "El takip sensörü"
+  "enabled": false,
+  "description": "El takip sensörü",
+  "permanent": true
 }
