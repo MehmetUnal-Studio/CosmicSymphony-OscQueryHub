@@ -698,6 +698,21 @@ code {
 .sig-btn:active { transform: scale(0.98); }
 .sig-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 
+.sig-btn.delete-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  padding: 7px 0;
+  color: rgba(255,255,255,0.35);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.sig-btn.delete-btn:hover {
+  background: rgba(255,45,85,0.10);
+  border-color: rgba(255,45,85,0.45);
+  color: var(--lost);
+  box-shadow: 0 0 0 2px rgba(255,45,85,0.12);
+}
+
 .sig-btn.enabled-btn {
   background: rgba(0,232,170,0.06);
   border-color: rgba(0,232,170,0.2);
@@ -1046,6 +1061,22 @@ function sendReconnect(deviceId) {
   if (ws && ws.readyState === WebSocket.OPEN)
     ws.send(JSON.stringify({ type: 'RECONNECT_DEVICE', deviceId }));
 }
+function sendDeleteDevice(dev) {
+  const ok = confirm(
+    `Delete "${dev.name}"?\n\n` +
+    `This will permanently remove:\n` +
+    `  • the manifest file\n` +
+    `  • all namespace entries (/${dev.name}/...)\n` +
+    `  • the active connection (if any)\n\n` +
+    `This cannot be undone.`
+  );
+  if (!ok) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'DELETE_DEVICE', deviceId: dev.id }));
+    flagSaving(dev.id);
+    showHint(dev.id, 'Deleting…', '');
+  }
+}
 
 function isValidIp(s)   { return /^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(s) || /^[a-zA-Z0-9.\-]+$/.test(s); }
 function isValidPort(s) { const n = parseInt(s, 10); return !isNaN(n) && n > 0 && n < 65536; }
@@ -1298,6 +1329,9 @@ function renderDevices() {
           <button class="sig-btn" data-action="reconnect" ${!dev.enabled ? 'disabled' : ''}>
             ⟳ Reconnect
           </button>
+          <button class="sig-btn delete-btn" data-action="delete" title="Delete device + manifest" aria-label="Delete device">
+            ✕
+          </button>
         </div>
         <div class="save-hint"></div>
       </div>
@@ -1309,6 +1343,7 @@ function renderDevices() {
 
     card.querySelector('[data-action="toggle"]').onclick    = () => { sendUpdateDevice(dev.id, { enabled: !dev.enabled }); flagSaving(dev.id); };
     card.querySelector('[data-action="reconnect"]').onclick = () => { sendReconnect(dev.id); showHint(dev.id, 'Reconnecting…', ''); };
+    card.querySelector('[data-action="delete"]').onclick    = () => sendDeleteDevice(dev);
 
     elDevices.appendChild(card);
 
@@ -1369,6 +1404,19 @@ function connect() {
     }
     else if (msg.type === 'DEVICE_UPDATED') {
       if (msg.device) { devices.set(msg.device.id, msg.device); renderDevices(); updateStats(); }
+    }
+    else if (msg.type === 'DELETE_DEVICE_RESULT') {
+      if (!msg.ok) flagError(msg.deviceId, msg.error || 'Delete failed');
+      // Success path: DEVICES_RELOADED + DEVICE_DELETED also broadcast — cleanup happens there.
+    }
+    else if (msg.type === 'DEVICE_DELETED' && typeof msg.deviceId === 'number') {
+      deviceParams.delete(msg.deviceId);
+      deviceMsgCounts.delete(msg.deviceId);
+      expandedDevices.delete(msg.deviceId);
+      m4lFeedback.delete(msg.deviceId);
+      devices.delete(msg.deviceId);
+      renderDevices();
+      updateStats();
     }
     else if (msg.type === 'UPDATE_DEVICE_RESULT') {
       if (msg.ok) flagSaved(msg.deviceId); else flagError(msg.deviceId, msg.error || 'Error');

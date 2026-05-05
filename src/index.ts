@@ -3,7 +3,7 @@ import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Bonjour } from 'bonjour-service';
 import { createServer } from 'http';
-import { readdirSync, readFileSync, writeFileSync, watch } from 'fs';
+import { readdirSync, readFileSync, writeFileSync, watch, unlinkSync } from 'fs';
 import { join } from 'path';
 import dgram from 'dgram';
 import { OscQueryClient } from './oscquery-client.js';
@@ -66,11 +66,26 @@ function loadManifests() {
       try {
         const content = readFileSync(join(MANIFESTS_DIR, file), 'utf-8');
         const manifest = JSON.parse(content) as DeviceManifest;
-        manifest.status = manifest.enabled ? 'configured' : 'disabled';
 
         if (devices.has(manifest.id)) {
           console.log(`  ⚠  Çakışma: ID ${manifest.id} zaten var (${file})`);
           continue;
+        }
+
+        // Aynı id'de mevcut bir bağlantı varsa ve host/port değişmediyse runtime state'i koru
+        const old = oldDevices.get(manifest.id);
+        const sameEndpoint = old
+          && old.host === manifest.host
+          && old.oscQueryPort === manifest.oscQueryPort
+          && old.enabled === manifest.enabled
+          && oscQueryClients.has(manifest.id);
+
+        if (sameEndpoint) {
+          manifest.status = old!.status;
+          manifest.lastMessageAt = old!.lastMessageAt;
+          manifest.paramCount = old!.paramCount;
+        } else {
+          manifest.status = manifest.enabled ? 'configured' : 'disabled';
         }
 
         devices.set(manifest.id, manifest);
@@ -271,6 +286,56 @@ function saveManifest(deviceId: number, updates: Partial<DeviceManifest>): { ok:
     setTimeout(() => { suppressWatcher = false; }, 500);
 
     broadcastToClients({ type: 'DEVICE_UPDATED', device: newDev });
+    return { ok: true };
+  } catch (e) {
+    suppressWatcher = false;
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+function deleteDevice(deviceId: number): { ok: boolean; error?: string } {
+  const dev = devices.get(deviceId);
+  const filename = manifestFilenames.get(deviceId);
+
+  if (!dev || !filename) {
+    return { ok: false, error: `Device not found: ID ${deviceId}` };
+  }
+
+  try {
+    suppressWatcher = true;
+
+    // 1. Disconnect any active OSCQuery client
+    const client = oscQueryClients.get(deviceId);
+    if (client) {
+      client.disconnect();
+      oscQueryClients.delete(deviceId);
+    }
+
+    // 2. Remove namespace entries owned by this device (prefix /<name>/)
+    const prefix = `/${dev.name}/`;
+    let removed = 0;
+    for (const path of [...namespace.keys()]) {
+      if (path === `/${dev.name}` || path.startsWith(prefix)) {
+        namespace.delete(path);
+        removed++;
+      }
+    }
+
+    // 3. Delete manifest file
+    const filePath = join(MANIFESTS_DIR, filename);
+    unlinkSync(filePath);
+
+    // 4. Clean in-memory maps
+    devices.delete(deviceId);
+    manifestFilenames.delete(deviceId);
+    deviceMsgCount.delete(deviceId);
+
+    console.log(`  🗑  Device deleted: ${dev.name} (ID ${deviceId}) — ${filename}, ${removed} namespace entries`);
+
+    setTimeout(() => { suppressWatcher = false; }, 500);
+
+    broadcastToClients({ type: 'DEVICES_RELOADED', devices: Array.from(devices.values()) });
+    broadcastToClients({ type: 'DEVICE_DELETED', deviceId });
     return { ok: true };
   } catch (e) {
     suppressWatcher = false;
@@ -608,6 +673,14 @@ wss.on('connection', (ws, req) => {
           }
           connectToDevice(dev);
         }
+      }
+
+      if (msg.type === 'DELETE_DEVICE' && typeof msg.deviceId === 'number') {
+        const result = deleteDevice(msg.deviceId);
+        ws.send(JSON.stringify({
+          type: 'DELETE_DEVICE_RESULT', deviceId: msg.deviceId,
+          ok: result.ok, error: result.error
+        }));
       }
 
       if (msg.type === 'RELOAD_MANIFESTS') loadManifests();
