@@ -679,24 +679,69 @@ code {
 /* ─── ACTION BUTTONS ─────────────────────────────── */
 .card-actions {
   display: flex; gap: 6px;
+  flex-wrap: wrap;
   padding-top: 10px;
   border-top: 1px solid rgba(255,255,255,0.05);
 }
 
 .sig-btn {
-  flex: 1; padding: 8px 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 6px;
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 2px; cursor: pointer;
   font-family: var(--font-sans);
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--ink-mid);
+  white-space: nowrap;
   transition: all 0.1s;
 }
 .sig-btn:hover { border-color: rgba(0,245,212,0.2); color: var(--ink); background: rgba(0,245,212,0.04); }
 .sig-btn:active { transform: scale(0.98); }
 .sig-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+.sig-btn.rec-btn {
+  flex: 0 1 auto;
+  padding: 7px 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.55);
+}
+.sig-btn.rec-btn:hover {
+  border-color: rgba(255,45,85,0.5);
+  color: var(--lost);
+}
+.sig-btn.rec-btn.active {
+  background: rgba(255,45,85,0.14);
+  border-color: rgba(255,45,85,0.7);
+  color: #ff7a95;
+  box-shadow: 0 0 0 2px rgba(255,45,85,0.12);
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%,100% { box-shadow: 0 0 0 1px rgba(255,45,85,0.12), 0 0 8px rgba(255,45,85,0.2); }
+  50%     { box-shadow: 0 0 0 2px rgba(255,45,85,0.35), 0 0 18px rgba(255,45,85,0.45); }
+}
+
+.sig-btn.play-btn {
+  flex: 0 1 auto;
+  padding: 7px 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.55);
+}
+.sig-btn.play-btn:hover {
+  border-color: rgba(0,245,212,0.4);
+  color: var(--signal);
+}
+.sig-btn.play-btn.active {
+  background: rgba(0,245,212,0.12);
+  border-color: rgba(0,245,212,0.55);
+  color: var(--signal);
+  box-shadow: 0 0 0 1px rgba(0,245,212,0.18), 0 0 14px rgba(0,245,212,0.35);
+}
 
 .sig-btn.delete-btn {
   flex: 0 0 auto;
@@ -1061,6 +1106,47 @@ function sendReconnect(deviceId) {
   if (ws && ws.readyState === WebSocket.OPEN)
     ws.send(JSON.stringify({ type: 'RECONNECT_DEVICE', deviceId }));
 }
+// ── Recording / playback state ────────────────────────────────────
+const recordingActive = new Set();        // deviceId set
+const playbackActive  = new Map();        // deviceId → { file }
+let recordingsList    = [];               // [{file, deviceId, deviceName, durationMs, eventCount}]
+
+function recordingsFor(deviceId) {
+  return recordingsList.filter(r => r.deviceId === deviceId);
+}
+
+function toggleRecording(dev) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (recordingActive.has(dev.id)) {
+    ws.send(JSON.stringify({ type: 'REC_STOP', deviceId: dev.id }));
+  } else {
+    ws.send(JSON.stringify({ type: 'REC_START', deviceId: dev.id }));
+  }
+}
+
+function togglePlayback(dev) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (playbackActive.has(dev.id)) {
+    ws.send(JSON.stringify({ type: 'PLAY_STOP', deviceId: dev.id }));
+    return;
+  }
+  const candidates = recordingsFor(dev.id);
+  if (candidates.length === 0) {
+    showHint(dev.id, 'No recordings yet — record first', '');
+    return;
+  }
+  let chosen = candidates[0];   // newest (listRecordings sorts desc)
+  if (candidates.length > 1) {
+    const labels = candidates.map((r, i) => `${i + 1}. ${r.file}  (${(r.durationMs / 1000).toFixed(1)}s, ${r.eventCount} events)`).join('\n');
+    const pick = prompt(`Pick a recording for ${dev.name}:\n\n${labels}\n\nEnter number (default 1):`, '1');
+    if (pick === null) return;
+    const idx = Math.max(1, Math.min(candidates.length, parseInt(pick, 10) || 1)) - 1;
+    chosen = candidates[idx];
+  }
+  const loop = confirm(`Loop playback of "${chosen.file}"?\n\nOK = loop, Cancel = play once`);
+  ws.send(JSON.stringify({ type: 'PLAY_START', deviceId: dev.id, file: chosen.file, loop }));
+}
+
 function sendDeleteDevice(dev) {
   const ok = confirm(
     `Delete "${dev.name}"?\n\n` +
@@ -1329,6 +1415,14 @@ function renderDevices() {
           <button class="sig-btn" data-action="reconnect" ${!dev.enabled ? 'disabled' : ''}>
             ⟳ Reconnect
           </button>
+          <button class="sig-btn rec-btn ${recordingActive.has(dev.id) ? 'active' : ''}" data-action="rec"
+                  title="${recordingActive.has(dev.id) ? 'Stop recording' : 'Start recording'}">
+            ${recordingActive.has(dev.id) ? '■ REC' : '● REC'}
+          </button>
+          <button class="sig-btn play-btn ${playbackActive.has(dev.id) ? 'active' : ''}" data-action="play"
+                  title="${playbackActive.has(dev.id) ? 'Stop playback' : 'Play recording'}">
+            ${playbackActive.has(dev.id) ? '■ STOP' : '▶ PLAY'}
+          </button>
           <button class="sig-btn delete-btn" data-action="delete" title="Delete device + manifest" aria-label="Delete device">
             ✕
           </button>
@@ -1343,6 +1437,8 @@ function renderDevices() {
 
     card.querySelector('[data-action="toggle"]').onclick    = () => { sendUpdateDevice(dev.id, { enabled: !dev.enabled }); flagSaving(dev.id); };
     card.querySelector('[data-action="reconnect"]').onclick = () => { sendReconnect(dev.id); showHint(dev.id, 'Reconnecting…', ''); };
+    card.querySelector('[data-action="rec"]').onclick       = () => toggleRecording(dev);
+    card.querySelector('[data-action="play"]').onclick      = () => togglePlayback(dev);
     card.querySelector('[data-action="delete"]').onclick    = () => sendDeleteDevice(dev);
 
     elDevices.appendChild(card);
@@ -1376,7 +1472,17 @@ function connect() {
   ws.onmessage = ({ data: raw }) => {
     const msg = JSON.parse(raw);
     if (msg.type === 'INITIAL_STATE') {
-      if (msg.devices) { for (const d of msg.devices) devices.set(d.id, d); renderDevices(); }
+      if (msg.devices) { for (const d of msg.devices) devices.set(d.id, d); }
+      if (msg.recordings) recordingsList = msg.recordings;
+      if (Array.isArray(msg.activeRecordings)) {
+        recordingActive.clear();
+        msg.activeRecordings.forEach(id => recordingActive.add(id));
+      }
+      if (Array.isArray(msg.activePlaybacks)) {
+        playbackActive.clear();
+        msg.activePlaybacks.forEach(p => playbackActive.set(p.deviceId, { file: p.file }));
+      }
+      renderDevices();
       if (msg.discoveredDevices) renderDiscovered(msg.discoveredDevices);
       processInitialState(msg.namespace);
       updateStats();
@@ -1438,6 +1544,29 @@ function connect() {
       const { deviceId, path, value } = msg;
       m4lFeedback.set(deviceId, { path, value, ts: Date.now() });
       flashM4L(deviceId, path, value);
+    }
+    else if (msg.type === 'REC_STATE') {
+      if (msg.recording) recordingActive.add(msg.deviceId);
+      else               recordingActive.delete(msg.deviceId);
+      renderDevices();
+    }
+    else if (msg.type === 'PLAY_STATE') {
+      if (msg.playing) playbackActive.set(msg.deviceId, { file: msg.file });
+      else             playbackActive.delete(msg.deviceId);
+      renderDevices();
+    }
+    else if (msg.type === 'RECORDINGS_LIST') {
+      recordingsList = msg.recordings || [];
+    }
+    else if (msg.type === 'REC_STOP_RESULT') {
+      if (msg.ok) showHint(msg.deviceId, `Saved: ${msg.events} events`, '');
+      else        flagError(msg.deviceId, msg.error || 'rec stop failed');
+    }
+    else if (msg.type === 'PLAY_START_RESULT') {
+      if (!msg.ok) flagError(msg.deviceId, msg.error || 'playback failed');
+    }
+    else if (msg.type === 'REC_START_RESULT') {
+      if (!msg.ok) flagError(msg.deviceId, msg.error || 'rec start failed');
     }
   };
 }

@@ -3,7 +3,15 @@ import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Bonjour } from 'bonjour-service';
 import { createServer } from 'http';
-import { readdirSync, readFileSync, writeFileSync, watch, unlinkSync } from 'fs';
+import {
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  watch,
+  unlinkSync,
+  mkdirSync,
+  existsSync,
+} from 'fs';
 import { join } from 'path';
 import dgram from 'dgram';
 import { OscQueryClient } from './oscquery-client.js';
@@ -16,15 +24,19 @@ const ABLETON_HOST = '127.0.0.1';
 const ABLETON_PORT = 10000;
 const HUB_NAME = 'OSCQuery Hub';
 const MANIFESTS_DIR = './manifests';
+const RECORDINGS_DIR = './recordings';
 
 // ============ GÜVENLİK SABİTLERİ ============
 const MAX_SUBSCRIBERS = 50;
-const MAX_NAMESPACE   = 10_000;
-const OSC_PATH_RE     = /^\/[a-zA-Z0-9_./-]{1,256}$/;
+const MAX_NAMESPACE = 10_000;
+const OSC_PATH_RE = /^\/[a-zA-Z0-9_./-]{1,256}$/;
 
 function isValidHost(host: string): boolean {
-  return /^(localhost|127\.0\.0\.1|((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))$/.test(host)
-    || /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$/.test(host);
+  return (
+    /^(localhost|127\.0\.0\.1|((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))$/.test(
+      host
+    ) || /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$/.test(host)
+  );
 }
 function isValidOscPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1024 && port <= 65535;
@@ -74,11 +86,12 @@ function loadManifests() {
 
         // Aynı id'de mevcut bir bağlantı varsa ve host/port değişmediyse runtime state'i koru
         const old = oldDevices.get(manifest.id);
-        const sameEndpoint = old
-          && old.host === manifest.host
-          && old.oscQueryPort === manifest.oscQueryPort
-          && old.enabled === manifest.enabled
-          && oscQueryClients.has(manifest.id);
+        const sameEndpoint =
+          old &&
+          old.host === manifest.host &&
+          old.oscQueryPort === manifest.oscQueryPort &&
+          old.enabled === manifest.enabled &&
+          oscQueryClients.has(manifest.id);
 
         if (sameEndpoint) {
           manifest.status = old!.status;
@@ -102,7 +115,7 @@ function loadManifests() {
 
     broadcastToClients({
       type: 'DEVICES_RELOADED',
-      devices: Array.from(devices.values())
+      devices: Array.from(devices.values()),
     });
   } catch (e) {
     console.log(`  ⚠  manifests/ klasörü okunamadı:`, (e as Error).message);
@@ -114,10 +127,11 @@ function reconcileClients(oldDevices: Map<number, DeviceManifest>) {
   // Eski cihazlar artık yok veya değişmiş → disconnect
   for (const [id, oldDev] of oldDevices.entries()) {
     const newDev = devices.get(id);
-    const shouldDisconnect = !newDev
-      || !newDev.enabled
-      || newDev.host !== oldDev.host
-      || newDev.oscQueryPort !== oldDev.oscQueryPort;
+    const shouldDisconnect =
+      !newDev ||
+      !newDev.enabled ||
+      newDev.host !== oldDev.host ||
+      newDev.oscQueryPort !== oldDev.oscQueryPort;
 
     if (shouldDisconnect && oscQueryClients.has(id)) {
       const client = oscQueryClients.get(id)!;
@@ -135,7 +149,7 @@ function reconcileClients(oldDevices: Map<number, DeviceManifest>) {
   // Yeni / aktif cihazlara connect
   for (const dev of devices.values()) {
     if (!dev.enabled) continue;
-    if (oscQueryClients.has(dev.id)) continue;  // zaten bağlı
+    if (oscQueryClients.has(dev.id)) continue; // zaten bağlı
 
     connectToDevice(dev);
   }
@@ -158,17 +172,17 @@ function connectToDevice(dev: DeviceManifest) {
       }
       broadcastDeviceUpdate(dev);
     },
-    onDisconnect: (reason) => {
+    onDisconnect: reason => {
       dev.status = 'lost';
       console.log(`  ❌ ${dev.name} koptu: ${reason}`);
       broadcastDeviceUpdate(dev);
     },
-    onLog: (msg) => {
+    onLog: msg => {
       console.log(`     [${dev.name}] ${msg}`);
     },
     onValue: (path, value) => {
       handleClientValue(dev, path, value);
-    }
+    },
   });
 
   oscQueryClients.set(dev.id, client);
@@ -186,7 +200,207 @@ function countParams(node: any): number {
   return count;
 }
 
+// ============ RECORDING / PLAYBACK ============
+interface RecordingEvent {
+  t: number;
+  path: string;
+  value: any;
+}
+interface RecordingSession {
+  deviceId: number;
+  deviceName: string;
+  startedAt: number;
+  events: RecordingEvent[];
+}
+interface PlaybackSession {
+  deviceId: number;
+  events: RecordingEvent[];
+  index: number;
+  timer: NodeJS.Timeout | null;
+  loop: boolean;
+  file: string;
+  startedAt: number;
+}
+
+const recordings = new Map<number, RecordingSession>(); // aktif kayıtlar
+const playbacks = new Map<number, PlaybackSession>(); // aktif oynatmalar
+
+function ensureRecordingsDir() {
+  if (!existsSync(RECORDINGS_DIR)) mkdirSync(RECORDINGS_DIR, { recursive: true });
+}
+
+function startRecording(deviceId: number): { ok: boolean; error?: string } {
+  const dev = devices.get(deviceId);
+  if (!dev) return { ok: false, error: 'device not found' };
+  if (recordings.has(deviceId)) return { ok: false, error: 'already recording' };
+  recordings.set(deviceId, {
+    deviceId,
+    deviceName: dev.name,
+    startedAt: Date.now(),
+    events: [],
+  });
+  console.log(`  ● REC start: ${dev.name} (ID ${deviceId})`);
+  broadcastToClients({ type: 'REC_STATE', deviceId, recording: true });
+  return { ok: true };
+}
+
+function stopRecording(deviceId: number): {
+  ok: boolean;
+  file?: string;
+  events?: number;
+  error?: string;
+} {
+  const rec = recordings.get(deviceId);
+  if (!rec) return { ok: false, error: 'not recording' };
+  recordings.delete(deviceId);
+
+  const duration = Date.now() - rec.startedAt;
+  const data = {
+    deviceId: rec.deviceId,
+    deviceName: rec.deviceName,
+    recordedAt: rec.startedAt,
+    durationMs: duration,
+    eventCount: rec.events.length,
+    events: rec.events,
+  };
+  const slug = rec.deviceName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const stamp = new Date(rec.startedAt).toISOString().replace(/[:.]/g, '-');
+  const filename = `${slug}_${stamp}.json`;
+  ensureRecordingsDir();
+  writeFileSync(join(RECORDINGS_DIR, filename), JSON.stringify(data, null, 2) + '\n', 'utf-8');
+
+  console.log(
+    `  ■ REC stop:  ${rec.deviceName} → ${filename} (${rec.events.length} events, ${(duration / 1000).toFixed(1)}s)`
+  );
+  broadcastToClients({
+    type: 'REC_STATE',
+    deviceId,
+    recording: false,
+    file: filename,
+    events: rec.events.length,
+  });
+  broadcastRecordings();
+  return { ok: true, file: filename, events: rec.events.length };
+}
+
+function listRecordings() {
+  ensureRecordingsDir();
+  const files = readdirSync(RECORDINGS_DIR)
+    .filter(f => f.endsWith('.json'))
+    .sort()
+    .reverse();
+  return files.map(f => {
+    try {
+      const meta = JSON.parse(readFileSync(join(RECORDINGS_DIR, f), 'utf-8'));
+      return {
+        file: f,
+        deviceId: meta.deviceId,
+        deviceName: meta.deviceName,
+        recordedAt: meta.recordedAt,
+        durationMs: meta.durationMs,
+        eventCount: meta.eventCount ?? meta.events?.length ?? 0,
+      };
+    } catch {
+      return { file: f, error: 'parse failed' };
+    }
+  });
+}
+
+function broadcastRecordings() {
+  broadcastToClients({ type: 'RECORDINGS_LIST', recordings: listRecordings() });
+}
+
+function startPlayback(
+  deviceId: number,
+  file: string,
+  opts: { loop?: boolean } = {}
+): { ok: boolean; error?: string; events?: number } {
+  const dev = devices.get(deviceId);
+  if (!dev) return { ok: false, error: 'device not found' };
+  if (playbacks.has(deviceId)) return { ok: false, error: 'already playing' };
+
+  const safeFile = file.replace(/[/\\]/g, '');
+  const fullPath = join(RECORDINGS_DIR, safeFile);
+  if (!existsSync(fullPath)) return { ok: false, error: 'file not found' };
+
+  let data: any;
+  try {
+    data = JSON.parse(readFileSync(fullPath, 'utf-8'));
+  } catch (e) {
+    return { ok: false, error: 'parse error: ' + (e as Error).message };
+  }
+  const events: RecordingEvent[] = Array.isArray(data.events) ? data.events : [];
+  if (events.length === 0) return { ok: false, error: 'no events in recording' };
+
+  const session: PlaybackSession = {
+    deviceId,
+    events,
+    index: 0,
+    timer: null,
+    loop: !!opts.loop,
+    file: safeFile,
+    startedAt: Date.now(),
+  };
+  playbacks.set(deviceId, session);
+
+  console.log(
+    `  ▶ PLAY start: ${dev.name} ← ${safeFile} (${events.length} events${opts.loop ? ', loop' : ''})`
+  );
+  broadcastToClients({ type: 'PLAY_STATE', deviceId, playing: true, file: safeFile });
+
+  schedulePlaybackTick(deviceId);
+  return { ok: true, events: events.length };
+}
+
+function schedulePlaybackTick(deviceId: number) {
+  const session = playbacks.get(deviceId);
+  if (!session) return;
+  const dev = devices.get(deviceId);
+  if (!dev) {
+    stopPlayback(deviceId);
+    return;
+  }
+
+  const ev = session.events[session.index];
+  if (!ev) {
+    if (session.loop) {
+      session.index = 0;
+      session.startedAt = Date.now();
+      schedulePlaybackTick(deviceId);
+    } else {
+      stopPlayback(deviceId);
+    }
+    return;
+  }
+
+  const elapsed = Date.now() - session.startedAt;
+  const delay = Math.max(0, ev.t - elapsed);
+  session.timer = setTimeout(() => {
+    handleClientValue(dev, ev.path, ev.value);
+    session.index++;
+    schedulePlaybackTick(deviceId);
+  }, delay);
+}
+
+function stopPlayback(deviceId: number): { ok: boolean; error?: string } {
+  const session = playbacks.get(deviceId);
+  if (!session) return { ok: false, error: 'not playing' };
+  if (session.timer) clearTimeout(session.timer);
+  playbacks.delete(deviceId);
+  const dev = devices.get(deviceId);
+  console.log(`  ■ PLAY stop:  ${dev?.name ?? 'ID ' + deviceId}`);
+  broadcastToClients({ type: 'PLAY_STATE', deviceId, playing: false });
+  return { ok: true };
+}
+
 function handleClientValue(dev: DeviceManifest, path: string, value: any) {
+  // Kayıt aktifse buffer'a ekle — gerçek cihazdan gelen değer
+  const rec = recordings.get(dev.id);
+  if (rec) {
+    const t = Date.now() - rec.startedAt;
+    rec.events.push({ t, path, value });
+  }
+
   dev.lastMessageAt = Date.now();
   dev.status = 'connected';
 
@@ -198,9 +412,16 @@ function handleClientValue(dev: DeviceManifest, path: string, value: any) {
   const hubPath = `/${dev.name}${path}`;
   const v = Array.isArray(value) ? value : [value];
   const firstVal = v[0];
-  const type = typeof firstVal === 'number'
-    ? (Number.isInteger(firstVal) ? 'i' : 'f')
-    : (typeof firstVal === 'boolean' ? (firstVal ? 'T' : 'F') : 's');
+  const type =
+    typeof firstVal === 'number'
+      ? Number.isInteger(firstVal)
+        ? 'i'
+        : 'f'
+      : typeof firstVal === 'boolean'
+        ? firstVal
+          ? 'T'
+          : 'F'
+        : 's';
 
   namespace.set(hubPath, {
     fullPath: hubPath,
@@ -208,7 +429,7 @@ function handleClientValue(dev: DeviceManifest, path: string, value: any) {
     value: v,
     lastUpdate: Date.now(),
     source: `${dev.host}:${dev.oscQueryPort}`,
-    deviceId: dev.id
+    deviceId: dev.id,
   });
 
   // Tarayıcılara duyur
@@ -221,7 +442,7 @@ function handleClientValue(dev: DeviceManifest, path: string, value: any) {
     deviceId: dev.id,
     deviceName: dev.name,
     isNew: false,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 
   // Ableton'a forward — eski sistem formatı
@@ -235,7 +456,10 @@ function broadcastDeviceUpdate(dev: DeviceManifest) {
 }
 
 // ============ MANIFEST KAYDET ============
-function saveManifest(deviceId: number, updates: Partial<DeviceManifest>): { ok: boolean; error?: string } {
+function saveManifest(
+  deviceId: number,
+  updates: Partial<DeviceManifest>
+): { ok: boolean; error?: string } {
   const dev = devices.get(deviceId);
   const filename = manifestFilenames.get(deviceId);
 
@@ -249,7 +473,10 @@ function saveManifest(deviceId: number, updates: Partial<DeviceManifest>): { ok:
   if (updates.oscQueryPort !== undefined && !isValidOscPort(updates.oscQueryPort)) {
     return { ok: false, error: `Geçersiz port: ${updates.oscQueryPort}` };
   }
-  if (updates.name !== undefined && (updates.name.trim().length === 0 || updates.name.length > 64)) {
+  if (
+    updates.name !== undefined &&
+    (updates.name.trim().length === 0 || updates.name.length > 64)
+  ) {
     return { ok: false, error: 'Geçersiz cihaz adı' };
   }
 
@@ -270,20 +497,27 @@ function saveManifest(deviceId: number, updates: Partial<DeviceManifest>): { ok:
     writeFileSync(filePath, JSON.stringify(updated, null, 2) + '\n', 'utf-8');
 
     const oldDev = { ...dev };
-    const newDev: DeviceManifest = { ...updated, status: updated.enabled ? 'configured' : 'disabled' };
+    const newDev: DeviceManifest = {
+      ...updated,
+      status: updated.enabled ? 'configured' : 'disabled',
+    };
     devices.set(deviceId, newDev);
 
     console.log(`  💾 Manifest kaydedildi: ${dev.name} (ID ${deviceId})`);
     if (updates.host !== undefined) console.log(`     host: ${oldDev.host} → ${updated.host}`);
-    if (updates.oscQueryPort !== undefined) console.log(`     port: ${oldDev.oscQueryPort} → ${updated.oscQueryPort}`);
-    if (updates.enabled !== undefined) console.log(`     enabled: ${oldDev.enabled} → ${updated.enabled}`);
+    if (updates.oscQueryPort !== undefined)
+      console.log(`     port: ${oldDev.oscQueryPort} → ${updated.oscQueryPort}`);
+    if (updates.enabled !== undefined)
+      console.log(`     enabled: ${oldDev.enabled} → ${updated.enabled}`);
 
     // Bağlantıları yenile
     const oldMap = new Map(devices);
     oldMap.set(deviceId, oldDev);
     reconcileClients(oldMap);
 
-    setTimeout(() => { suppressWatcher = false; }, 500);
+    setTimeout(() => {
+      suppressWatcher = false;
+    }, 500);
 
     broadcastToClients({ type: 'DEVICE_UPDATED', device: newDev });
     return { ok: true };
@@ -330,9 +564,13 @@ function deleteDevice(deviceId: number): { ok: boolean; error?: string } {
     manifestFilenames.delete(deviceId);
     deviceMsgCount.delete(deviceId);
 
-    console.log(`  🗑  Device deleted: ${dev.name} (ID ${deviceId}) — ${filename}, ${removed} namespace entries`);
+    console.log(
+      `  🗑  Device deleted: ${dev.name} (ID ${deviceId}) — ${filename}, ${removed} namespace entries`
+    );
 
-    setTimeout(() => { suppressWatcher = false; }, 500);
+    setTimeout(() => {
+      suppressWatcher = false;
+    }, 500);
 
     broadcastToClients({ type: 'DEVICES_RELOADED', devices: Array.from(devices.values()) });
     broadcastToClients({ type: 'DEVICE_DELETED', deviceId });
@@ -355,9 +593,15 @@ interface Parameter {
 
 const namespace = new Map<string, Parameter>();
 
-interface OscSubscriber { address: string; port: number; registeredAt: number; }
+interface OscSubscriber {
+  address: string;
+  port: number;
+  registeredAt: number;
+}
 const oscSubscribers = new Map<string, OscSubscriber>();
-function subscriberKey(addr: string, port: number) { return `${addr}:${port}`; }
+function subscriberKey(addr: string, port: number) {
+  return `${addr}:${port}`;
+}
 
 const wsClients = new Set<WebSocket>();
 function broadcastToClients(data: any) {
@@ -368,7 +612,7 @@ function broadcastToClients(data: any) {
 }
 
 function oscTypeToQueryType(oscType: string): string {
-  const map: Record<string, string> = { 'f': 'f', 'i': 'i', 's': 's', 'T': 'T', 'F': 'F', 'd': 'd' };
+  const map: Record<string, string> = { f: 'f', i: 'i', s: 's', T: 'T', F: 'F', d: 'd' };
   return map[oscType] || 's';
 }
 
@@ -388,12 +632,12 @@ function encodeOscString(s: string): Buffer {
 }
 
 function buildOscMessage(address: string, path: string, value: number, isInt: boolean): Buffer {
-  const addrBuf  = encodeOscString(address);
-  const typeBuf  = encodeOscString(isInt ? ',si' : ',sf');
-  const pathBuf  = encodeOscString(path);
-  const valBuf   = Buffer.alloc(4);
+  const addrBuf = encodeOscString(address);
+  const typeBuf = encodeOscString(isInt ? ',si' : ',sf');
+  const pathBuf = encodeOscString(path);
+  const valBuf = Buffer.alloc(4);
   if (isInt) valBuf.writeInt32BE(Math.round(value), 0);
-  else       valBuf.writeFloatBE(value, 0);
+  else valBuf.writeFloatBE(value, 0);
   return Buffer.concat([addrBuf, typeBuf, pathBuf, valBuf]);
 }
 
@@ -409,7 +653,7 @@ function forwardToAbleton(deviceId: number, paramName: string, value: any, type:
 }
 
 function broadcastToOsc(path: string, value: any, type: string, exceptSource?: string) {
-  const args = (Array.isArray(value) ? value : [value]).map((v) => {
+  const args = (Array.isArray(value) ? value : [value]).map(v => {
     let oscType = type;
     if (typeof v === 'number') oscType = Number.isInteger(v) && type === 'i' ? 'i' : 'f';
     return { type: oscType, value: v };
@@ -425,7 +669,7 @@ function broadcastToOsc(path: string, value: any, type: string, exceptSource?: s
 const udpPort = new osc.UDPPort({
   localAddress: '0.0.0.0',
   localPort: OSC_PORT,
-  metadata: true
+  metadata: true,
 });
 
 udpPort.on('ready', () => {
@@ -460,14 +704,21 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
     if (typeof port === 'number') {
       const key = subscriberKey(info.address, port);
       if (!oscSubscribers.has(key) && oscSubscribers.size >= MAX_SUBSCRIBERS) {
-        console.log(`  ⚠  Abone limiti aşıldı (${MAX_SUBSCRIBERS}), reddedildi: ${info.address}:${port}`);
+        console.log(
+          `  ⚠  Abone limiti aşıldı (${MAX_SUBSCRIBERS}), reddedildi: ${info.address}:${port}`
+        );
         return;
       }
       oscSubscribers.set(key, {
-        address: info.address, port, registeredAt: Date.now()
+        address: info.address,
+        port,
+        registeredAt: Date.now(),
       });
       console.log(`  📡 Abone oldu: ${info.address}:${port}`);
-      broadcastToClients({ type: 'SUBSCRIBERS_CHANGED', subscribers: Array.from(oscSubscribers.values()) });
+      broadcastToClients({
+        type: 'SUBSCRIBERS_CHANGED',
+        subscribers: Array.from(oscSubscribers.values()),
+      });
     }
     return;
   }
@@ -476,7 +727,10 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
     const port = oscMsg.args[0]?.value;
     if (typeof port === 'number') {
       oscSubscribers.delete(subscriberKey(info.address, port));
-      broadcastToClients({ type: 'SUBSCRIBERS_CHANGED', subscribers: Array.from(oscSubscribers.values()) });
+      broadcastToClients({
+        type: 'SUBSCRIBERS_CHANGED',
+        subscribers: Array.from(oscSubscribers.values()),
+      });
     }
     return;
   }
@@ -488,7 +742,7 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
     type: args.length > 0 ? oscTypeToQueryType(args[0].type) : 's',
     value: args.map((a: any) => a.value),
     lastUpdate: Date.now(),
-    source: from
+    source: from,
   };
   const isNew = !namespace.has(oscMsg.address);
   if (isNew && namespace.size >= MAX_NAMESPACE) {
@@ -514,8 +768,13 @@ udpPort.on('message', (oscMsg: any, _timeTag: any, info: any) => {
   console.log(`${marker} [${time}] [UDP-direct] ${oscMsg.address.padEnd(28)} → ${valStr}`);
 
   broadcastToClients({
-    type: 'PATH_CHANGED', path: oscMsg.address, value: param.value,
-    paramType: param.type, source: from, isNew, timestamp: param.lastUpdate
+    type: 'PATH_CHANGED',
+    path: oscMsg.address,
+    value: param.value,
+    paramType: param.type,
+    source: from,
+    isNew,
+    timestamp: param.lastUpdate,
   });
 
   broadcastToOsc(oscMsg.address, param.value, param.type, from);
@@ -560,8 +819,10 @@ app.use((_req, res, next) => {
   }
   res.header('X-Content-Type-Options', 'nosniff');
   res.header('X-Frame-Options', 'SAMEORIGIN');
-  res.header('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src ws: wss: http://localhost:* http://127.0.0.1:*");
+  res.header(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src ws: wss: http://localhost:* http://127.0.0.1:*"
+  );
   next();
 });
 app.use('/ui', express.static('web'));
@@ -570,8 +831,10 @@ app.use(express.json());
 app.get('/', (req, res) => {
   if ('HOST_INFO' in req.query) {
     return res.json({
-      NAME: HUB_NAME, OSC_PORT, OSC_TRANSPORT: 'UDP',
-      EXTENSIONS: { ACCESS: true, VALUE: true, DESCRIPTION: true, TYPE: true, OSC_STREAMING: true }
+      NAME: HUB_NAME,
+      OSC_PORT,
+      OSC_TRANSPORT: 'UDP',
+      EXTENSIONS: { ACCESS: true, VALUE: true, DESCRIPTION: true, TYPE: true, OSC_STREAMING: true },
     });
   }
   res.json(buildTree());
@@ -580,7 +843,7 @@ app.get('/', (req, res) => {
 app.get('/_devices', (_req, res) => {
   const devs = Array.from(devices.values()).map(d => ({
     ...d,
-    msgCount: deviceMsgCount.get(d.id) || 0
+    msgCount: deviceMsgCount.get(d.id) || 0,
   }));
   res.json({ devices: devs, self: { name: HUB_NAME, port: HTTP_PORT, oscPort: OSC_PORT } });
 });
@@ -591,7 +854,7 @@ app.get('/_status', (_req, res) => {
     ws_clients: wsClients.size,
     osc_subscribers: Array.from(oscSubscribers.values()),
     devices: Array.from(devices.values()),
-    ableton_msgs_sent
+    ableton_msgs_sent,
   });
 });
 
@@ -599,8 +862,13 @@ app.get(/^\/(.+)/, (req, res) => {
   const path = '/' + req.params[0];
   const param = namespace.get(path);
   if (param) {
-    res.json({ FULL_PATH: path, TYPE: param.type, VALUE: param.value, ACCESS: 3,
-      DESCRIPTION: `From ${param.source}` });
+    res.json({
+      FULL_PATH: path,
+      TYPE: param.type,
+      VALUE: param.value,
+      ACCESS: 3,
+      DESCRIPTION: `From ${param.source}`,
+    });
   } else {
     const tree = buildTree();
     const parts = path.split('/').filter(p => p.length > 0);
@@ -621,15 +889,23 @@ wss.on('connection', (ws, req) => {
   console.log(`  🔌 WS bağlantı: ${ip}`);
   wsClients.add(ws);
 
-  ws.send(JSON.stringify({
-    type: 'INITIAL_STATE',
-    namespace: buildTree(),
-    devices: Array.from(devices.values()),
-    subscribers: Array.from(oscSubscribers.values()),
-    discoveredDevices: Array.from(discoveredDevices.values())
-  }));
+  ws.send(
+    JSON.stringify({
+      type: 'INITIAL_STATE',
+      namespace: buildTree(),
+      devices: Array.from(devices.values()),
+      subscribers: Array.from(oscSubscribers.values()),
+      discoveredDevices: Array.from(discoveredDevices.values()),
+      recordings: listRecordings(),
+      activeRecordings: Array.from(recordings.keys()),
+      activePlaybacks: Array.from(playbacks.entries()).map(([id, s]) => ({
+        deviceId: id,
+        file: s.file,
+      })),
+    })
+  );
 
-  ws.on('message', (raw) => {
+  ws.on('message', raw => {
     try {
       const msg = JSON.parse(raw.toString());
 
@@ -641,7 +917,9 @@ wss.on('connection', (ws, req) => {
         const param: Parameter = existing || {
           fullPath: msg.path,
           type: typeof msg.value === 'number' ? 'f' : 's',
-          value: newValue, lastUpdate: Date.now(), source: `web:${ip}`
+          value: newValue,
+          lastUpdate: Date.now(),
+          source: `web:${ip}`,
         };
         param.value = newValue;
         param.lastUpdate = Date.now();
@@ -649,19 +927,27 @@ wss.on('connection', (ws, req) => {
         namespace.set(msg.path, param);
 
         broadcastToClients({
-          type: 'PATH_CHANGED', path: msg.path, value: param.value,
-          paramType: param.type, source: param.source, isNew: !existing,
-          timestamp: param.lastUpdate
+          type: 'PATH_CHANGED',
+          path: msg.path,
+          value: param.value,
+          paramType: param.type,
+          source: param.source,
+          isNew: !existing,
+          timestamp: param.lastUpdate,
         });
         broadcastToOsc(msg.path, param.value, param.type);
       }
 
       if (msg.type === 'UPDATE_DEVICE' && typeof msg.deviceId === 'number') {
         const result = saveManifest(msg.deviceId, msg.updates || {});
-        ws.send(JSON.stringify({
-          type: 'UPDATE_DEVICE_RESULT', deviceId: msg.deviceId,
-          ok: result.ok, error: result.error
-        }));
+        ws.send(
+          JSON.stringify({
+            type: 'UPDATE_DEVICE_RESULT',
+            deviceId: msg.deviceId,
+            ok: result.ok,
+            error: result.error,
+          })
+        );
       }
 
       if (msg.type === 'RECONNECT_DEVICE' && typeof msg.deviceId === 'number') {
@@ -677,13 +963,72 @@ wss.on('connection', (ws, req) => {
 
       if (msg.type === 'DELETE_DEVICE' && typeof msg.deviceId === 'number') {
         const result = deleteDevice(msg.deviceId);
-        ws.send(JSON.stringify({
-          type: 'DELETE_DEVICE_RESULT', deviceId: msg.deviceId,
-          ok: result.ok, error: result.error
-        }));
+        ws.send(
+          JSON.stringify({
+            type: 'DELETE_DEVICE_RESULT',
+            deviceId: msg.deviceId,
+            ok: result.ok,
+            error: result.error,
+          })
+        );
       }
 
       if (msg.type === 'RELOAD_MANIFESTS') loadManifests();
+
+      if (msg.type === 'REC_START' && typeof msg.deviceId === 'number') {
+        const r = startRecording(msg.deviceId);
+        ws.send(
+          JSON.stringify({
+            type: 'REC_START_RESULT',
+            deviceId: msg.deviceId,
+            ok: r.ok,
+            error: r.error,
+          })
+        );
+      }
+      if (msg.type === 'REC_STOP' && typeof msg.deviceId === 'number') {
+        const r = stopRecording(msg.deviceId);
+        ws.send(
+          JSON.stringify({
+            type: 'REC_STOP_RESULT',
+            deviceId: msg.deviceId,
+            ok: r.ok,
+            error: r.error,
+            file: r.file,
+            events: r.events,
+          })
+        );
+      }
+      if (msg.type === 'LIST_RECORDINGS') {
+        ws.send(JSON.stringify({ type: 'RECORDINGS_LIST', recordings: listRecordings() }));
+      }
+      if (
+        msg.type === 'PLAY_START' &&
+        typeof msg.deviceId === 'number' &&
+        typeof msg.file === 'string'
+      ) {
+        const r = startPlayback(msg.deviceId, msg.file, { loop: !!msg.loop });
+        ws.send(
+          JSON.stringify({
+            type: 'PLAY_START_RESULT',
+            deviceId: msg.deviceId,
+            ok: r.ok,
+            error: r.error,
+            events: r.events,
+          })
+        );
+      }
+      if (msg.type === 'PLAY_STOP' && typeof msg.deviceId === 'number') {
+        const r = stopPlayback(msg.deviceId);
+        ws.send(
+          JSON.stringify({
+            type: 'PLAY_STOP_RESULT',
+            deviceId: msg.deviceId,
+            ok: r.ok,
+            error: r.error,
+          })
+        );
+      }
 
       if (msg.type === 'ADD_DISCOVERED' && msg.host && msg.port) {
         if (!isValidHost(String(msg.host))) {
@@ -704,10 +1049,14 @@ wss.on('connection', (ws, req) => {
           host: msg.host,
           oscQueryPort: msg.port,
           enabled: true,
-          description: `Bonjour ile keşfedildi`
+          description: `Bonjour ile keşfedildi`,
         };
         const filename = `${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${nextId}.json`;
-        writeFileSync(join(MANIFESTS_DIR, filename), JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+        writeFileSync(
+          join(MANIFESTS_DIR, filename),
+          JSON.stringify(manifest, null, 2) + '\n',
+          'utf-8'
+        );
         discoveredDevices.delete(`${msg.host}:${msg.port}`);
         console.log(`  ➕ Yeni cihaz eklendi: ${name} (ID ${nextId})`);
         loadManifests();
@@ -727,7 +1076,10 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-server.listen(HTTP_PORT, () => { publishBonjour(); startDiscovery(); });
+server.listen(HTTP_PORT, () => {
+  publishBonjour();
+  startDiscovery();
+});
 
 const bonjour = new Bonjour();
 function publishBonjour() {
@@ -737,7 +1089,12 @@ function publishBonjour() {
 }
 
 // ============ BONJOUR DISCOVERY ============
-interface DiscoveredDevice { name: string; host: string; port: number; firstSeen: number; }
+interface DiscoveredDevice {
+  name: string;
+  host: string;
+  port: number;
+  firstSeen: number;
+}
 const discoveredDevices = new Map<string, DiscoveredDevice>();
 
 function isAlreadyKnown(host: string, port: number): boolean {
@@ -745,18 +1102,21 @@ function isAlreadyKnown(host: string, port: number): boolean {
 }
 
 function broadcastDiscovered() {
-  broadcastToClients({ type: 'DISCOVERED_DEVICES', devices: Array.from(discoveredDevices.values()) });
+  broadcastToClients({
+    type: 'DISCOVERED_DEVICES',
+    devices: Array.from(discoveredDevices.values()),
+  });
 }
 
 function startDiscovery() {
   const browser = bonjour.find({ type: 'oscjson', protocol: 'tcp' });
 
   browser.on('up', (service: any) => {
-    const ipv4 = (service.addresses as string[] || []).find(a => a.includes('.'));
+    const ipv4 = ((service.addresses as string[]) || []).find(a => a.includes('.'));
     const host = ipv4 || service.host;
     const port = service.port as number;
-    if (port === HTTP_PORT) return;          // kendimiz
-    if (isAlreadyKnown(host, port)) return;  // zaten manifest'te
+    if (port === HTTP_PORT) return; // kendimiz
+    if (isAlreadyKnown(host, port)) return; // zaten manifest'te
 
     const key = `${host}:${port}`;
     discoveredDevices.set(key, { name: service.name, host, port, firstSeen: Date.now() });
@@ -765,7 +1125,7 @@ function startDiscovery() {
   });
 
   browser.on('down', (service: any) => {
-    const ipv4 = (service.addresses as string[] || []).find((a: string) => a.includes('.'));
+    const ipv4 = ((service.addresses as string[]) || []).find((a: string) => a.includes('.'));
     const host = ipv4 || service.host;
     const key = `${host}:${service.port}`;
     if (discoveredDevices.delete(key)) broadcastDiscovered();
@@ -775,7 +1135,7 @@ function startDiscovery() {
 // ============ M4L GERİ KANAL (port 8888) ============
 const feedbackSocket = dgram.createSocket('udp4');
 
-feedbackSocket.on('message', (buf) => {
+feedbackSocket.on('message', buf => {
   try {
     // OSC olarak dene
     const packet = osc.readPacket(buf, { metadata: true }) as any;
@@ -784,14 +1144,20 @@ feedbackSocket.on('message', (buf) => {
     if (!m) return;
     const deviceId = parseInt(m[1]);
     const args = packet.args || [];
-    const path   = args[0]?.value ?? args[0] ?? '';
-    const value  = args[1]?.value ?? args[1] ?? 0;
+    const path = args[0]?.value ?? args[0] ?? '';
+    const value = args[1]?.value ?? args[1] ?? 0;
     broadcastToClients({ type: 'M4L_FEEDBACK', deviceId, path, value });
     console.log(`  ◄ M4L [device${deviceId}] ${path} = ${value}`);
   } catch {
     // OSC değil — ham baytları logla, format tespiti için
-    const hex = buf.slice(0, 24).toString('hex').replace(/(.{2})/g, '$1 ');
-    const txt = buf.slice(0, 24).toString('utf8').replace(/[^\x20-\x7e]/g, '·');
+    const hex = buf
+      .slice(0, 24)
+      .toString('hex')
+      .replace(/(.{2})/g, '$1 ');
+    const txt = buf
+      .slice(0, 24)
+      .toString('utf8')
+      .replace(/[^\x20-\x7e]/g, '·');
     console.log(`  ◄ M4L [ham] ${buf.length}b  hex: ${hex.trim()}  txt: ${txt}`);
   }
 });
@@ -805,14 +1171,17 @@ feedbackSocket.bind(8889, '127.0.0.1', () => {
 // Format: {"_device":"ece","x":1.0,"y":2.0} — _device opsiyonel
 const jsonUdpSocket = dgram.createSocket('udp4');
 
-jsonUdpSocket.on('message', (buf) => {
+jsonUdpSocket.on('message', buf => {
   try {
     const raw = buf.toString('utf8').trim();
     const data = JSON.parse(raw) as Record<string, unknown>;
 
     const deviceName = typeof data['_device'] === 'string' ? data['_device'] : null;
     const devId = deviceName
-      ? (() => { for (const [id, d] of devices.entries()) if (d.name === deviceName) return id; return null; })()
+      ? (() => {
+          for (const [id, d] of devices.entries()) if (d.name === deviceName) return id;
+          return null;
+        })()
       : null;
 
     let count = 0;
@@ -828,9 +1197,15 @@ jsonUdpSocket.on('message', (buf) => {
         type: 'f',
         value: [numVal],
         lastUpdate: Date.now(),
-        source: deviceName ?? 'json-udp'
+        source: deviceName ?? 'json-udp',
       });
-      broadcastToClients({ type: 'PATH_CHANGED', path, paramType: 'f', value: [numVal], deviceName });
+      broadcastToClients({
+        type: 'PATH_CHANGED',
+        path,
+        paramType: 'f',
+        value: [numVal],
+        deviceName,
+      });
       count++;
     }
 
