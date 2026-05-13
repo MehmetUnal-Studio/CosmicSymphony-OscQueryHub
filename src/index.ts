@@ -826,7 +826,8 @@ app.use((_req, res, next) => {
   next();
 });
 app.use('/ui', express.static('web'));
-app.use(express.json());
+// Yüklenen kayıt dosyaları büyük olabilir — limiti büyüt
+app.use(express.json({ limit: '50mb' }));
 
 app.get('/', (req, res) => {
   if ('HOST_INFO' in req.query) {
@@ -856,6 +857,94 @@ app.get('/_status', (_req, res) => {
     devices: Array.from(devices.values()),
     ableton_msgs_sent,
   });
+});
+
+// ============ RECORDING HTTP API ============
+app.get('/_recordings', (_req, res) => {
+  res.json({ recordings: listRecordings() });
+});
+
+// Dosya adı sanitizasyonu: sadece base name, traversal yok.
+// Tight whitelist — sadece a-z, A-Z, 0-9, ., _, - karakterlerine izin verir.
+// Bu sayede Content-Disposition header injection ya da path traversal
+// için kullanılabilecek karakterler ulaşamaz.
+const RECORDING_NAME_RE = /^[a-zA-Z0-9._-]+\.json$/;
+function safeRecordingPath(file: string): string | null {
+  if (!file || typeof file !== 'string') return null;
+  if (!RECORDING_NAME_RE.test(file)) return null;
+  if (file.includes('..')) return null;
+  return join(RECORDINGS_DIR, file);
+}
+
+app.get('/_recordings/:file', (req, res) => {
+  const full = safeRecordingPath(req.params.file);
+  if (!full || !existsSync(full)) return res.status(404).json({ error: 'not found' });
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${req.params.file}"`);
+  res.sendFile(full, { root: '.' }, err => {
+    if (err) res.status(500).end();
+  });
+});
+
+app.delete('/_recordings/:file', (req, res) => {
+  const full = safeRecordingPath(req.params.file);
+  if (!full || !existsSync(full)) return res.status(404).json({ error: 'not found' });
+  try {
+    unlinkSync(full);
+    console.log(`  🗑  Recording deleted: ${req.params.file}`);
+    broadcastRecordings();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+// Upload — body: bütün recording JSON ({ deviceName?, events: [...] })
+app.post('/_recordings/upload', (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object')
+    return res.status(400).json({ ok: false, error: 'JSON body required' });
+  if (!Array.isArray(body.events))
+    return res.status(400).json({ ok: false, error: 'events array required' });
+  if (body.events.length === 0)
+    return res.status(400).json({ ok: false, error: 'events array is empty' });
+
+  // Olay yapısı doğrulama (ilk birkaçına bak)
+  for (const ev of body.events.slice(0, 10)) {
+    if (typeof ev !== 'object' || ev === null)
+      return res.status(400).json({ ok: false, error: 'invalid event shape' });
+    if (typeof ev.t !== 'number')
+      return res.status(400).json({ ok: false, error: 'event.t must be number (ms)' });
+    if (typeof ev.path !== 'string')
+      return res.status(400).json({ ok: false, error: 'event.path must be string' });
+  }
+
+  const deviceName = String(body.deviceName || 'imported').slice(0, 64);
+  const slug = deviceName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${slug}_imported_${stamp}.json`;
+
+  const data = {
+    deviceId: body.deviceId ?? null,
+    deviceName,
+    recordedAt: body.recordedAt ?? Date.now(),
+    durationMs: body.durationMs ?? body.events[body.events.length - 1]?.t ?? 0,
+    eventCount: body.events.length,
+    events: body.events,
+    importedAt: Date.now(),
+  };
+
+  try {
+    ensureRecordingsDir();
+    writeFileSync(join(RECORDINGS_DIR, filename), JSON.stringify(data, null, 2) + '\n', 'utf-8');
+    console.log(
+      `  📥 Recording imported: ${filename} (${body.events.length} events, device="${deviceName}")`
+    );
+    broadcastRecordings();
+    res.json({ ok: true, file: filename, eventCount: body.events.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
 });
 
 app.get(/^\/(.+)/, (req, res) => {

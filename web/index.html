@@ -935,6 +935,96 @@ code {
   border-radius: var(--radius); font-family: var(--display);
   font-size: 0.55rem; letter-spacing: 0.2em; text-transform: uppercase;
 }
+
+/* ─── RECORDINGS PANEL ───────────────────────────── */
+.rec-upload {
+  margin-bottom: 0.85rem;
+  padding: 1.2rem 1rem;
+  border: 1px dashed rgba(0,245,212,0.18);
+  border-radius: var(--radius);
+  background: rgba(0,245,212,0.02);
+  text-align: center;
+  cursor: pointer;
+}
+.rec-upload.dragover {
+  border-color: rgba(0,245,212,0.55);
+  background: rgba(0,245,212,0.08);
+  box-shadow: 0 0 24px rgba(0,245,212,0.18);
+}
+.rec-upload-text {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-mid);
+  letter-spacing: 0.04em;
+}
+.rec-upload-text strong {
+  font-size: 16px; color: var(--signal);
+  margin-right: 0.4rem;
+}
+.rec-upload-text code {
+  font-family: var(--mono); font-size: 11px;
+  background: rgba(0,245,212,0.08);
+  color: var(--signal);
+  padding: 1px 5px; border-radius: 2px;
+  margin: 0 0.2rem;
+}
+.rec-upload-pick {
+  background: none; border: none;
+  color: var(--signal);
+  font-family: var(--mono); font-size: 12px;
+  text-decoration: underline; cursor: pointer;
+  padding: 0 0.2rem;
+}
+
+.rec-list { display: flex; flex-direction: column; gap: 6px; }
+
+.rec-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.6rem 1rem;
+  align-items: center;
+  padding: 0.6rem 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.rec-row:hover { border-color: rgba(0,245,212,0.18); background: rgba(0,245,212,0.025); }
+
+.rec-row-main { min-width: 0; }
+.rec-row-file {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rec-row-meta {
+  margin-top: 2px;
+  font-family: var(--mono); font-size: 10px;
+  color: var(--ink-mid); letter-spacing: 0.02em;
+}
+.rec-row-meta .pill {
+  display: inline-block;
+  padding: 1px 6px; margin-right: 5px;
+  border-radius: 8px;
+  background: rgba(0,245,212,0.07);
+  color: var(--signal); font-size: 9px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+.rec-row-actions { display: flex; gap: 5px; }
+.rec-row-btn {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 5px 9px;
+  font-family: var(--font-sans);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-mid); cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.rec-row-btn:hover { color: var(--signal); border-color: rgba(0,245,212,0.3); }
+.rec-row-btn.danger:hover { color: var(--lost); border-color: rgba(255,45,85,0.45); }
 </style>
 </head>
 <body>
@@ -1024,6 +1114,22 @@ code {
     </div>
     <div class="discovered-grid" id="discovered"></div>
 
+    <!-- Recordings -->
+    <div class="section-header">
+      <div class="section-title">Recordings</div>
+      <div class="section-hint">Capture device data · download to share · drop JSON to import</div>
+    </div>
+    <div id="rec-upload-zone" class="rec-upload">
+      <input type="file" id="rec-upload-input" accept="application/json,.json" hidden>
+      <div class="rec-upload-text">
+        <strong>↓</strong> Drop a recording <code>.json</code> here, or
+        <button class="rec-upload-pick" onclick="document.getElementById('rec-upload-input').click()">browse</button>
+      </div>
+    </div>
+    <div id="rec-list" class="rec-list">
+      <div class="empty">No recordings yet — hit ● REC on a device card</div>
+    </div>
+
   </main>
 </div>
 
@@ -1112,7 +1218,15 @@ const playbackActive  = new Map();        // deviceId → { file }
 let recordingsList    = [];               // [{file, deviceId, deviceName, durationMs, eventCount}]
 
 function recordingsFor(deviceId) {
-  return recordingsList.filter(r => r.deviceId === deviceId);
+  // Aynı cihaza ait kayıtlar önce, sonra diğerleri (imported / başka cihaz)
+  const dev = devices.get(deviceId);
+  const name = dev ? dev.name : null;
+  const own  = [], rest = [];
+  for (const r of recordingsList) {
+    if (r.deviceId === deviceId || (name && r.deviceName === name)) own.push(r);
+    else rest.push(r);
+  }
+  return [...own, ...rest];
 }
 
 function toggleRecording(dev) {
@@ -1483,6 +1597,7 @@ function connect() {
         msg.activePlaybacks.forEach(p => playbackActive.set(p.deviceId, { file: p.file }));
       }
       renderDevices();
+      renderRecordings();
       if (msg.discoveredDevices) renderDiscovered(msg.discoveredDevices);
       processInitialState(msg.namespace);
       updateStats();
@@ -1557,6 +1672,7 @@ function connect() {
     }
     else if (msg.type === 'RECORDINGS_LIST') {
       recordingsList = msg.recordings || [];
+      renderRecordings();
     }
     else if (msg.type === 'REC_STOP_RESULT') {
       if (msg.ok) showHint(msg.deviceId, `Saved: ${msg.events} events`, '');
@@ -1591,6 +1707,93 @@ function restoreM4LStrips() {
   for (const [devId, fb] of m4lFeedback.entries()) {
     if (Date.now() - fb.ts < 2000) flashM4L(devId, fb.path, fb.value);
   }
+}
+
+// ── Recordings panel ──────────────────────────────────────────────
+function renderRecordings() {
+  const el = document.getElementById('rec-list');
+  if (!el) return;
+  if (recordingsList.length === 0) {
+    el.innerHTML = '<div class="empty">No recordings yet — hit ● REC on a device card</div>';
+    return;
+  }
+  el.innerHTML = '';
+  for (const r of recordingsList) {
+    const dur = ((r.durationMs || 0) / 1000).toFixed(1) + 's';
+    const events = r.eventCount ?? 0;
+    const when = r.recordedAt ? new Date(r.recordedAt).toLocaleString() : '';
+    const dev  = esc(r.deviceName || '—');
+    const row = document.createElement('div');
+    row.className = 'rec-row';
+    row.innerHTML = `
+      <div class="rec-row-main">
+        <div class="rec-row-file">${esc(r.file)}</div>
+        <div class="rec-row-meta">
+          <span class="pill">${dev}</span>
+          ${dur} · ${events} events · ${esc(when)}
+        </div>
+      </div>
+      <div class="rec-row-actions">
+        <a class="rec-row-btn" href="/_recordings/${encodeURIComponent(r.file)}" download="${esc(r.file)}">↓ Download</a>
+        <button class="rec-row-btn danger" data-action="rec-delete">✕ Delete</button>
+      </div>
+    `;
+    row.querySelector('[data-action="rec-delete"]').onclick = () => deleteRecording(r.file);
+    el.appendChild(row);
+  }
+}
+
+async function deleteRecording(file) {
+  if (!confirm(`Delete recording "${file}"?\n\nThis cannot be undone.`)) return;
+  try {
+    const res = await fetch(`/_recordings/${encodeURIComponent(file)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(`Delete failed: ${j.error || res.status}`);
+    }
+    // server broadcast handles refresh
+  } catch (e) {
+    alert(`Delete failed: ${e.message}`);
+  }
+}
+
+async function uploadRecording(file) {
+  if (!file) return;
+  if (!/\.json$/i.test(file.name)) { alert('Please pick a .json file'); return; }
+  try {
+    const text = await file.text();
+    try { JSON.parse(text); }
+    catch (e) { alert(`Not valid JSON: ${e.message}`); return; }
+
+    const res = await fetch('/_recordings/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: text,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.ok === false) {
+      alert(`Upload failed: ${json.error || res.status}`);
+      return;
+    }
+    console.log(`Imported: ${json.file} (${json.eventCount} events)`);
+  } catch (e) {
+    alert(`Upload failed: ${e.message}`);
+  }
+}
+
+function initRecordingsUpload() {
+  const zone  = document.getElementById('rec-upload-zone');
+  const input = document.getElementById('rec-upload-input');
+  if (!zone || !input) return;
+  zone.onclick = e => { if (e.target.tagName !== 'BUTTON') input.click(); };
+  input.onchange = () => { if (input.files[0]) { uploadRecording(input.files[0]); input.value = ''; } };
+  zone.ondragover  = e => { e.preventDefault(); zone.classList.add('dragover'); };
+  zone.ondragleave = () => zone.classList.remove('dragover');
+  zone.ondrop      = e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) uploadRecording(e.dataTransfer.files[0]);
+  };
 }
 
 function renderDiscovered(list) {
@@ -1630,6 +1833,7 @@ function addDiscovered(host, port, name) {
 }
 
 connect();
+initRecordingsUpload();
 </script>
 
 <!-- Ambient generative background — flow-field + mouse attractor -->
